@@ -3,6 +3,9 @@
 	"build": {
 		"dockerfile": "Dockerfile"
 	},
+	"features": {
+    	"ghcr.io/devcontainers/features/sshd:1": {}
+  	},
 	"customizations": {
 		"vscode": {
 			"settings": {
@@ -18,5 +21,8 @@
 		}
 	},
 	"runArgs": ["--privileged"],
-	"mounts": ["source=/dev/bus/usb,target=/dev/bus/usb,type=bind"]
+	"mounts": [
+        "source=/dev/bus/usb,target=/dev/bus/usb,type=bind",
+		"source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached"
+    ]
 }
