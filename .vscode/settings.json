@@ -1,0 +1,20 @@
+{
+  "C_Cpp.intelliSenseEngine": "default",
+  "idf.espIdfPathWin": "C:\\Users\\Ishwar\\esp\\v5.5\\esp-idf",
+  "idf.pythonInstallPath": "/opt/esp/python_env/idf5.4_py3.12_env/bin/python",
+  "idf.openOcdConfigs": [
+    "board/esp32-wrover-kit-3.3v.cfg"
+  ],
+  "idf.toolsPathWin": "C:\\Users\\Ishwar\\.espressif",
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32"
+  },
+  "clangd.path": "C:\\Users\\Ishwar\\.espressif\\tools\\esp-clang\\esp-19.1.2_20250312\\esp-clang\\bin\\clangd.exe",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=d:\\Ishwar_workspace\\planty-nextgen\\build"
+  ],
+  "idf.flashType": "UART",
+  "idf.port": "/dev/ttyUSB0"
+}
