@@ -7,6 +7,9 @@
    CONDITIONS OF ANY KIND, either express or implied.
 */
 
+#include "soil_sensor.h"
+#include "sensor_config.h"
+
 #include <string.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -30,6 +33,9 @@ esp_rmaker_device_t *switch_device;
 esp_rmaker_device_t *light_device;
 esp_rmaker_device_t *fan_device;
 esp_rmaker_device_t *temp_sensor_device;
+
+/* NEW: Array of soil moisture sensor devices */
+esp_rmaker_device_t *soil_sensor_devices[NUM_SOIL_SENSORS];
 
 /* Callback to handle commands received from the RainMaker cloud */
 static esp_err_t write_cb(const esp_rmaker_device_t *device, const esp_rmaker_param_t *param,
@@ -58,6 +64,68 @@ static esp_err_t write_cb(const esp_rmaker_device_t *device, const esp_rmaker_pa
     }
     esp_rmaker_param_update(param, val);
     return ESP_OK;
+}
+
+/* Function to create and initialize soil moisture sensor devices */
+static void init_soil_sensor_devices(esp_rmaker_node_t *node)
+{
+    char device_name[32];
+    char serial_number[32];
+    
+    for (int i = 0; i < NUM_SOIL_SENSORS; i++) {
+        // Create unique device name
+        snprintf(device_name, sizeof(device_name), "Soil Moisture %d", i + 1);
+        snprintf(serial_number, sizeof(serial_number), "SM-%d", 1000 + i);
+        
+        /* Create temperature sensor device (we use it to display moisture percentage)
+         * Temperature sensor type provides:
+         * - Time-series data support
+         * - Automatic graphing in Rainmaker app
+         * - Historical data tracking
+         */
+        soil_sensor_devices[i] = esp_rmaker_temp_sensor_device_create(
+            device_name,
+            NULL,  // No private data
+            0.0f   // Initial value (will be updated immediately)
+        );
+        
+        if (soil_sensor_devices[i] == NULL) {
+            ESP_LOGE(TAG, "Failed to create soil sensor device %d", i);
+            continue;
+        }
+        
+        // Add device to the Rainmaker node
+        esp_rmaker_node_add_device(node, soil_sensor_devices[i]);
+        
+        // Add custom attributes for better identification
+        esp_rmaker_device_add_attribute(soil_sensor_devices[i], 
+                                       "sensor_type", "soil_moisture");
+        esp_rmaker_device_add_attribute(soil_sensor_devices[i], 
+                                       "unit", "percent");
+        esp_rmaker_device_add_attribute(soil_sensor_devices[i], 
+                                       "Serial Number", serial_number);
+        
+        // Get the temperature parameter and add UI customization
+        esp_rmaker_param_t *moisture_param = esp_rmaker_device_get_param_by_name(
+            soil_sensor_devices[i], 
+            ESP_RMAKER_DEF_TEMPERATURE_NAME
+        );
+        
+        if (moisture_param) {
+            // Add UI type for better display (slider with 0-100 range)
+            esp_rmaker_param_add_ui_type(moisture_param, "esp.ui.slider");
+            
+            // Set bounds for the parameter
+            esp_rmaker_param_add_bounds(moisture_param, 
+                                       esp_rmaker_float(0.0),    // min
+                                       esp_rmaker_float(100.0),  // max
+                                       esp_rmaker_float(0.1));   // step
+        }
+        
+        ESP_LOGI(TAG, "Created soil moisture sensor device: %s", device_name);
+    }
+    
+    ESP_LOGI(TAG, "All %d soil moisture sensor devices created successfully", NUM_SOIL_SENSORS);
 }
 
 void app_main()
@@ -119,6 +187,9 @@ void app_main()
     /* Create a Temperature Sensor device and add the relevant parameters to it */
     temp_sensor_device = esp_rmaker_temp_sensor_device_create("Temperature Sensor", NULL, app_get_current_temperature());
     esp_rmaker_node_add_device(node, temp_sensor_device);
+    
+    /* NEW: Create Soil Moisture Sensor devices */
+    init_soil_sensor_devices(node);
 
     /* Enable OTA */
     esp_rmaker_ota_enable_default();

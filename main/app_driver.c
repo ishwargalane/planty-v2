@@ -11,6 +11,10 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/timers.h>
 
+#include <i2cdev.h>
+#include "soil_sensor.h"
+#include "sensor_config.h"
+
 #include <iot_button.h>
 #include <button_gpio.h>
 #include <esp_rmaker_core.h>
@@ -43,12 +47,18 @@
 #define WIFI_RESET_BUTTON_TIMEOUT       3
 #define FACTORY_RESET_BUTTON_TIMEOUT    10
 
+/* Add this line right after all the includes */
+static const char *TAG = "app_driver";
+
 static bool g_power_state = DEFAULT_SWITCH_POWER;
 static float g_temperature = DEFAULT_TEMPERATURE;
 static TimerHandle_t sensor_timer;
 
 /* LED Indicator handle */
 static led_indicator_handle_t g_led_indicator = NULL;
+
+/* Soil Sensor handle */
+static TimerHandle_t soil_sensor_timer;
 
 static esp_err_t app_indicator_set_rgb(uint8_t red, uint8_t green, uint8_t blue)
 {
@@ -75,6 +85,70 @@ static void app_sensor_update(TimerHandle_t handle)
     esp_rmaker_param_update_and_report(
                 esp_rmaker_device_get_param_by_type(temp_sensor_device, ESP_RMAKER_PARAM_TEMPERATURE),
                 esp_rmaker_float(g_temperature));
+}
+
+static void app_soil_sensor_update(TimerHandle_t handle)
+{
+    float sensor_values[NUM_SOIL_SENSORS];
+    
+    esp_err_t ret = soil_sensor_read_all(sensor_values, NUM_SOIL_SENSORS);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to read soil sensors");
+        return;
+    }
+
+    // Update each soil sensor device in Rainmaker
+    for (int i = 0; i < NUM_SOIL_SENSORS; i++) {
+        if (sensor_values[i] >= 0) {  // Valid reading
+            esp_rmaker_param_update_and_report(
+                esp_rmaker_device_get_param_by_type(soil_sensor_devices[i], ESP_RMAKER_PARAM_TEMPERATURE),
+                esp_rmaker_float(sensor_values[i])
+            );
+            ESP_LOGI(TAG, "Rainmaker updated - Soil Sensor %d: %.1f%%", i + 1, sensor_values[i]);
+        } else {
+            ESP_LOGW(TAG, "Skipping Soil Sensor %d due to read error", i + 1);
+        }
+    }
+}
+
+esp_err_t app_soil_sensor_init(void)
+{
+    esp_err_t ret;
+    
+    // Initialize the soil moisture sensor hardware
+    ret = soil_sensor_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize soil sensor hardware");
+        return ret;
+    }
+    
+    // Create timer for periodic sensor reading (15 minutes)
+    soil_sensor_timer = xTimerCreate(
+        "soil_sensor_update_tm",
+        (SOIL_SENSOR_READ_INTERVAL_SEC * 1000) / portTICK_PERIOD_MS,
+        pdTRUE,                         // Auto-reload
+        NULL,                           // Timer ID
+        app_soil_sensor_update          // Callback function
+    );
+    
+    if (soil_sensor_timer == NULL) {
+        ESP_LOGE(TAG, "Failed to create soil sensor timer");
+        return ESP_FAIL;
+    }
+    
+    // Do an immediate first reading
+    app_soil_sensor_update(NULL);
+    
+    // Start the timer for periodic updates
+    if (xTimerStart(soil_sensor_timer, 0) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to start soil sensor timer");
+        return ESP_FAIL;
+    }
+    
+    ESP_LOGI(TAG, "Soil sensor timer started (%d minute interval)", 
+             SOIL_SENSOR_READ_INTERVAL_SEC / 60);
+    
+    return ESP_OK;
 }
 
 float app_get_current_temperature()
@@ -214,6 +288,13 @@ void app_driver_init()
     gpio_config(&io_conf);
     app_indicator_init();
     app_sensor_init();
+
+    /* NEW: Initialize I2C library (required before any I2C device init) */
+    ESP_ERROR_CHECK(i2cdev_init());
+    ESP_LOGI(TAG, "I2C library initialized");
+    
+    /* NEW: Initialize soil moisture sensors */
+    ESP_ERROR_CHECK(app_soil_sensor_init());
 }
 
 int IRAM_ATTR app_driver_set_state(bool state)
