@@ -67,37 +67,43 @@ static esp_err_t write_cb(const esp_rmaker_device_t *device, const esp_rmaker_pa
 }
 
 /* Function to create and initialize soil moisture sensor devices */
+/* Function to create and initialize soil moisture sensor devices */
 static void init_soil_sensor_devices(esp_rmaker_node_t *node)
 {
     char device_name[32];
     char serial_number[32];
+    
+    ESP_LOGI(TAG, "Creating %d soil moisture sensor devices...", NUM_SOIL_SENSORS);
     
     for (int i = 0; i < NUM_SOIL_SENSORS; i++) {
         // Create unique device name
         snprintf(device_name, sizeof(device_name), "Soil Moisture %d", i + 1);
         snprintf(serial_number, sizeof(serial_number), "SM-%d", 1000 + i);
         
-        /* Create temperature sensor device (we use it to display moisture percentage)
-         * Temperature sensor type provides:
-         * - Time-series data support
-         * - Automatic graphing in Rainmaker app
-         * - Historical data tracking
-         */
+        ESP_LOGI(TAG, "Creating device %d: %s", i, device_name);
+        
+        /* Create temperature sensor device */
         soil_sensor_devices[i] = esp_rmaker_temp_sensor_device_create(
             device_name,
             NULL,  // No private data
-            0.0f   // Initial value (will be updated immediately)
+            0.0f   // Initial value
         );
         
         if (soil_sensor_devices[i] == NULL) {
-            ESP_LOGE(TAG, "Failed to create soil sensor device %d", i);
+            ESP_LOGE(TAG, "FAILED to create soil sensor device %d", i);
+            continue; // Skip this device
+        }
+        
+        ESP_LOGI(TAG, "Device %d created successfully at %p", i, soil_sensor_devices[i]);
+        
+        // Add device to the Rainmaker node
+        esp_err_t err = esp_rmaker_node_add_device(node, soil_sensor_devices[i]);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to add device %d to node: %s", i, esp_err_to_name(err));
             continue;
         }
         
-        // Add device to the Rainmaker node
-        esp_rmaker_node_add_device(node, soil_sensor_devices[i]);
-        
-        // Add custom attributes for better identification
+        // Add custom attributes
         esp_rmaker_device_add_attribute(soil_sensor_devices[i], 
                                        "sensor_type", "soil_moisture");
         esp_rmaker_device_add_attribute(soil_sensor_devices[i], 
@@ -105,27 +111,28 @@ static void init_soil_sensor_devices(esp_rmaker_node_t *node)
         esp_rmaker_device_add_attribute(soil_sensor_devices[i], 
                                        "Serial Number", serial_number);
         
-        // Get the temperature parameter and add UI customization
+        // Get the temperature parameter
         esp_rmaker_param_t *moisture_param = esp_rmaker_device_get_param_by_name(
             soil_sensor_devices[i], 
             ESP_RMAKER_DEF_TEMPERATURE_NAME
         );
         
         if (moisture_param) {
-            // Add UI type for better display (slider with 0-100 range)
+            // Add UI customization
             esp_rmaker_param_add_ui_type(moisture_param, "esp.ui.slider");
-            
-            // Set bounds for the parameter
             esp_rmaker_param_add_bounds(moisture_param, 
-                                       esp_rmaker_float(0.0),    // min
-                                       esp_rmaker_float(100.0),  // max
-                                       esp_rmaker_float(0.1));   // step
+                                       esp_rmaker_float(0.0),
+                                       esp_rmaker_float(100.0),
+                                       esp_rmaker_float(0.1));
+            ESP_LOGI(TAG, "Device %d parameter configured", i);
+        } else {
+            ESP_LOGW(TAG, "Could not get parameter for device %d", i);
         }
         
-        ESP_LOGI(TAG, "Created soil moisture sensor device: %s", device_name);
+        ESP_LOGI(TAG, "✓ Soil moisture sensor device %d setup complete", i);
     }
     
-    ESP_LOGI(TAG, "All %d soil moisture sensor devices created successfully", NUM_SOIL_SENSORS);
+    ESP_LOGI(TAG, "All soil moisture sensor devices created");
 }
 
 void app_main()
@@ -224,4 +231,11 @@ void app_main()
         vTaskDelay(5000/portTICK_PERIOD_MS);
         abort();
     }
+
+    // TEMPORARY: Enable calibration
+    ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "Starting calibration in 5 seconds...");
+    ESP_LOGI(TAG, "Make sure sensors are in DRY AIR");
+    vTaskDelay(pdMS_TO_TICKS(5000));
+    soil_sensor_calibration_mode();  // Never returns
 }

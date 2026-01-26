@@ -10,6 +10,7 @@
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/timers.h>
+#include "i2c_scanner.h"
 
 #include <i2cdev.h>
 #include "soil_sensor.h"
@@ -99,18 +100,39 @@ static void app_soil_sensor_update(TimerHandle_t handle)
 
     // Update each soil sensor device in Rainmaker
     for (int i = 0; i < NUM_SOIL_SENSORS; i++) {
-        if (sensor_values[i] >= 0) {  // Valid reading
-            esp_rmaker_param_update_and_report(
-                esp_rmaker_device_get_param_by_type(soil_sensor_devices[i], ESP_RMAKER_PARAM_TEMPERATURE),
-                esp_rmaker_float(sensor_values[i])
-            );
-            ESP_LOGI(TAG, "Rainmaker updated - Soil Sensor %d: %.1f%%", i + 1, sensor_values[i]);
+        // Check if device was created successfully
+        if (soil_sensor_devices[i] == NULL) {
+            ESP_LOGW(TAG, "Skipping Soil Sensor %d - device not created", i + 1);
+            continue;
+        }
+        
+        // Check if reading is valid
+        if (sensor_values[i] < 0) {
+            ESP_LOGW(TAG, "Skipping Soil Sensor %d - invalid reading", i + 1);
+            continue;
+        }
+        
+        // Get the parameter
+        esp_rmaker_param_t *param = esp_rmaker_device_get_param_by_name(
+            soil_sensor_devices[i], 
+            ESP_RMAKER_DEF_TEMPERATURE_NAME
+        );
+        
+        if (param == NULL) {
+            ESP_LOGE(TAG, "Cannot get parameter for Soil Sensor %d", i + 1);
+            continue;
+        }
+        
+        // Update and report
+        ret = esp_rmaker_param_update_and_report(param, esp_rmaker_float(sensor_values[i]));
+        
+        if (ret == ESP_OK) {
+            ESP_LOGI(TAG, "✓ Rainmaker updated - Soil Sensor %d: %.1f%%", i + 1, sensor_values[i]);
         } else {
-            ESP_LOGW(TAG, "Skipping Soil Sensor %d due to read error", i + 1);
+            ESP_LOGE(TAG, "✗ Failed to update Soil Sensor %d: %s", i + 1, esp_err_to_name(ret));
         }
     }
 }
-
 esp_err_t app_soil_sensor_init(void)
 {
     esp_err_t ret;
@@ -122,7 +144,7 @@ esp_err_t app_soil_sensor_init(void)
         return ret;
     }
     
-    // Create timer for periodic sensor reading (15 minutes)
+    // Create timer for periodic sensor reading (1 minute)
     soil_sensor_timer = xTimerCreate(
         "soil_sensor_update_tm",
         (SOIL_SENSOR_READ_INTERVAL_SEC * 1000) / portTICK_PERIOD_MS,
@@ -136,17 +158,20 @@ esp_err_t app_soil_sensor_init(void)
         return ESP_FAIL;
     }
     
-    // Do an immediate first reading
-    app_soil_sensor_update(NULL);
+    // REMOVED: Do NOT do immediate first reading here
+    // The devices aren't created yet!
+    // app_soil_sensor_update(NULL);
     
-    // Start the timer for periodic updates
+    // Start the timer - first reading will happen after 1 minute
     if (xTimerStart(soil_sensor_timer, 0) != pdPASS) {
         ESP_LOGE(TAG, "Failed to start soil sensor timer");
         return ESP_FAIL;
     }
     
-    ESP_LOGI(TAG, "Soil sensor timer started (%d minute interval)", 
-             SOIL_SENSOR_READ_INTERVAL_SEC / 60);
+    ESP_LOGI(TAG, "Soil sensor timer started (%d second interval)", 
+             SOIL_SENSOR_READ_INTERVAL_SEC);
+    ESP_LOGI(TAG, "First reading will occur in %d seconds", 
+             SOIL_SENSOR_READ_INTERVAL_SEC);
     
     return ESP_OK;
 }
@@ -293,6 +318,18 @@ void app_driver_init()
     ESP_ERROR_CHECK(i2cdev_init());
     ESP_LOGI(TAG, "I2C library initialized");
     
+    /* Add delay and visual separator */
+    ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "========================================");
+    ESP_LOGI(TAG, "    RUNNING I2C SCANNER IN 2 SECONDS   ");
+    ESP_LOGI(TAG, "========================================");
+    ESP_LOGI(TAG, "");
+    vTaskDelay(pdMS_TO_TICKS(2000));  // 2 second delay
+    
+    /* NEW: Scan I2C bus to verify ADS1115 connection */
+    i2c_scanner();  
+
     /* NEW: Initialize soil moisture sensors */
     ESP_ERROR_CHECK(app_soil_sensor_init());
 }

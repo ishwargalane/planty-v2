@@ -20,7 +20,7 @@
 #define NUM_SOIL_SENSORS    4
 
 /* Sampling Configuration */
-#define SOIL_SENSOR_READ_INTERVAL_SEC   (15 * 60)  // 15 minutes in seconds
+#define SOIL_SENSOR_READ_INTERVAL_SEC   (1 * 60)  // 15 minutes in seconds
 
 /* Moisture Calibration Values 
  * IMPORTANT: These are placeholder values. You MUST calibrate these!

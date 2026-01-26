@@ -47,7 +47,7 @@ esp_err_t soil_sensor_init(void)
     gain_val = ads111x_gain_values[ADS111X_GAIN_4V096];
     ESP_LOGI(TAG, "Gain set to ±4.096V (gain_val=%.3f)", gain_val);
 
-    // Set data rate to 128 samples per second (good balance of speed and accuracy)
+    // Set data rate to 128 samples per second
     ret = ads111x_set_data_rate(&ads_dev, ADS111X_DATA_RATE_128);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set data rate: %s", esp_err_to_name(ret));
@@ -55,8 +55,8 @@ esp_err_t soil_sensor_init(void)
         return ret;
     }
 
-    // Set mode to single-shot (power efficient for 15-min intervals)
-    ret = ads111x_set_mode(&ads_dev, ADS111X_MODE_SINGLE_SHOT);
+    // CHANGED: Set mode to CONTINUOUS (more reliable than single-shot)
+    ret = ads111x_set_mode(&ads_dev, ADS111X_MODE_CONTINUOUS);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set mode: %s", esp_err_to_name(ret));
         ads111x_free_desc(&ads_dev);
@@ -64,7 +64,7 @@ esp_err_t soil_sensor_init(void)
     }
 
     initialized = true;
-    ESP_LOGI(TAG, "ADS1115 initialized successfully (single-shot mode, 128 SPS)");
+    ESP_LOGI(TAG, "ADS1115 initialized successfully (CONTINUOUS mode, 128 SPS)");
     
     return ESP_OK;
 }
@@ -104,23 +104,26 @@ esp_err_t soil_sensor_read_channel(uint8_t channel, int16_t *raw_value, float *v
         return ret;
     }
 
-    // Small delay for mux to settle
+    // In continuous mode, wait for conversion to be ready
+    // At 128 SPS, each conversion takes ~7.8ms
     vTaskDelay(pdMS_TO_TICKS(10));
 
-    // In single-shot mode, ads111x_get_value() triggers conversion and waits for completion
+    // Read the conversion result (in continuous mode, this just reads the latest value)
     ret = ads111x_get_value(&ads_dev, raw_value);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to read from channel %d: %s", 
+        ESP_LOGE(TAG, "Failed to read value from channel %d: %s", 
                  channel, esp_err_to_name(ret));
         return ret;
     }
 
-    // Calculate voltage if requested (following library example formula)
+    // Calculate voltage if requested
     if (voltage != NULL) {
         *voltage = gain_val / ADS111X_MAX_VALUE * (*raw_value);
-        ESP_LOGD(TAG, "Ch%d: raw=%d, voltage=%.4fV", channel, *raw_value, *voltage);
+        ESP_LOGI(TAG, "Ch%d: raw=%d (0x%04X), voltage=%.4fV", 
+                 channel, *raw_value, (uint16_t)*raw_value, *voltage);
     } else {
-        ESP_LOGD(TAG, "Ch%d: raw=%d", channel, *raw_value);
+        ESP_LOGI(TAG, "Ch%d: raw=%d (0x%04X)", 
+                 channel, *raw_value, (uint16_t)*raw_value);
     }
     
     return ESP_OK;
