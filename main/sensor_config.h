@@ -33,7 +33,7 @@
  * Higher value = drier (less conductivity)
  * Lower value = wetter (more conductivity)
  */
-#define MOISTURE_DRY_VALUE   25000    // ADC value when completely dry (in air)
-#define MOISTURE_WET_VALUE   12000    // ADC value when fully wet (in water)
+#define MOISTURE_DRY_VALUE   17500    // ADC value when completely dry (in air)
+#define MOISTURE_WET_VALUE   7600    // ADC value when fully wet (in water)
 
 #endif // SENSOR_CONFIG_H
