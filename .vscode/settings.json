@@ -16,5 +16,13 @@
     "--compile-commands-dir=d:\\Ishwar_workspace\\planty-nextgen\\build"
   ],
   "idf.flashType": "UART",
-  "idf.port": "/dev/ttyUSB0"
+  "idf.port": "/dev/ttyUSB0",
+  "github.copilot.advanced": {
+    "contextFiles": [
+      "main/sensor_config.h",
+      "main/app_priv.h",
+      "README.md",
+      ".github/copilot-instructions.md"
+    ]
+  }
 }

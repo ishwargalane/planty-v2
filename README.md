@@ -65,3 +65,42 @@ The ESP32-S2-Saola-1 board has the RGB LED connected to GPIO 18. However, a few 
 
 Press and hold the BOOT button for more than 3 seconds to reset the board to factory defaults. You will have to provision the board again to use it.
 
+---
+
+## Developer References
+
+This project uses ESP-IDF and ESP RainMaker. Always consult the following resources when implementing features:
+
+### ESP RainMaker Documentation
+- **Main Documentation**: https://docs.rainmaker.espressif.com/
+- **Technical Overview**: https://docs.rainmaker.espressif.com/docs/product_overview/technical_overview/introduction
+- **API Reference**: https://docs.rainmaker.espressif.com/docs/apis/
+- **Firmware Developer Guide**: https://evaluation.rainmaker.espressif.com/firmware-developer-guide
+- **Device API**: https://docs.rainmaker.espressif.com/docs/apis/device-api
+- **Node API**: https://docs.rainmaker.espressif.com/docs/apis/node-api
+- **Parameter API**: https://docs.rainmaker.espressif.com/docs/apis/parameter-api
+
+### ESP-IDF Documentation
+- **ESP-IDF v5.0 API Reference**: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/
+- **I2C Driver API**: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/peripherals/i2c.html
+- **NVS Storage**: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/storage/nvs_flash.html
+- **WiFi API**: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/network/esp_wifi.html
+- **FreeRTOS**: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/freertos.html
+- **Logging System**: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/log.html
+
+### Component Libraries & GitHub Repositories
+- **ESP RainMaker GitHub**: https://github.com/espressif/esp-rainmaker
+- **ESP RainMaker Examples**: https://github.com/espressif/esp-rainmaker/tree/master/examples
+- **esp-idf-lib** (ADS111x driver): https://github.com/UncleRus/esp-idf-lib
+- **ADS111x I2C Component**: https://github.com/UncleRus/esp-idf-lib/tree/master/components/ads111x
+
+### Community & Support
+- **ESP32 Forum**: https://esp32.com/
+- **ESP-IDF GitHub Issues**: https://github.com/espressif/esp-idf/issues
+- **ESP RainMaker Forum**: https://rainmaker.espressif.com/forum/
+
+### Project-Specific Notes
+- See [.github/copilot-instructions.md](.github/copilot-instructions.md) for detailed coding conventions and patterns
+- Hardware configuration in [main/sensor_config.h](main/sensor_config.h)
+- Code patterns and examples in [.vscode/copilot-patterns.md](.vscode/copilot-patterns.md)
+
