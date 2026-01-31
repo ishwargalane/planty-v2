@@ -187,7 +187,7 @@ esp_err_t soil_sensor_read_all(float *sensor_values, uint8_t num_sensors)
 
     for (uint8_t i = 0; i < num_sensors; i++) {
         ret = soil_sensor_read_channel(i, &raw_value, &voltage);
-        if (ret != ESP_OK) {
+        if (ret != ESP_OK || raw_value < 0 || raw_value > ADS111X_MAX_VALUE || raw_value < (MOISTURE_WET_VALUE - 1000) || raw_value > (MOISTURE_DRY_VALUE + 1000)) {
             ESP_LOGE(TAG, "Failed to read sensor %d", i);
             sensor_values[i] = -1.0f;  // Error indicator
             continue;

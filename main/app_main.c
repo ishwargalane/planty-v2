@@ -29,10 +29,7 @@
 
 static const char *TAG = "app_main";
 
-esp_rmaker_device_t *switch_device;
-esp_rmaker_device_t *light_device;
-esp_rmaker_device_t *fan_device;
-esp_rmaker_device_t *temp_sensor_device;
+esp_rmaker_device_t *pump_device;
 
 /* NEW: Array of soil moisture sensor devices */
 esp_rmaker_device_t *soil_sensor_devices[NUM_SOIL_SENSORS];
@@ -49,7 +46,7 @@ static esp_err_t write_cb(const esp_rmaker_device_t *device, const esp_rmaker_pa
     if (strcmp(param_name, ESP_RMAKER_DEF_POWER_NAME) == 0) {
         ESP_LOGI(TAG, "Received value = %s for %s - %s",
                 val.val.b? "true" : "false", device_name, param_name);
-        if (strcmp(device_name, "Switch") == 0) {
+        if (device == pump_device) {
             app_driver_set_state(val.val.b);
         }
     } else if (strcmp(param_name, ESP_RMAKER_DEF_BRIGHTNESS_NAME) == 0) {
@@ -128,6 +125,17 @@ static void init_soil_sensor_devices(esp_rmaker_node_t *node)
         } else {
             ESP_LOGW(TAG, "Could not get parameter for device %d", i);
         }
+
+        /* Add a companion Status parameter (string) to indicate connectivity */
+        esp_rmaker_param_t *status_param = esp_rmaker_param_create(
+            "Status",
+            "string",
+            esp_rmaker_str("Connected"),
+            PROP_FLAG_READ
+        );
+        if (status_param) {
+            esp_rmaker_device_add_param(soil_sensor_devices[i], status_param);
+        }
         
         ESP_LOGI(TAG, "✓ Soil moisture sensor device %d setup complete", i);
     }
@@ -168,32 +176,15 @@ void app_main()
         abort();
     }
 
-    /* Create a Switch device and add the relevant parameters to it */
-    switch_device = esp_rmaker_switch_device_create("Switch", NULL, DEFAULT_SWITCH_POWER);
-    esp_rmaker_device_add_cb(switch_device, write_cb, NULL);
-    esp_rmaker_node_add_device(node, switch_device);
+    /* Create a Pump device (reused from Switch) and add the relevant parameters to it */
+    pump_device = esp_rmaker_switch_device_create("Pump", NULL, DEFAULT_SWITCH_POWER);
+    esp_rmaker_device_add_cb(pump_device, write_cb, NULL);
+    esp_rmaker_device_add_attribute(pump_device, "device", "pump");
+    esp_rmaker_device_add_attribute(pump_device, "Serial Number", "PN-001");
+    esp_rmaker_node_add_device(node, pump_device);
 
-    /* Create a Light device and add the relevant parameters to it */
-    light_device = esp_rmaker_lightbulb_device_create("Light", NULL, DEFAULT_LIGHT_POWER);
-    esp_rmaker_device_add_cb(light_device, write_cb, NULL);
-    
-    esp_rmaker_device_add_param(light_device,
-            esp_rmaker_brightness_param_create(ESP_RMAKER_DEF_BRIGHTNESS_NAME, DEFAULT_LIGHT_BRIGHTNESS));
-    
-    esp_rmaker_device_add_attribute(light_device, "Serial Number", "012345");
-    esp_rmaker_device_add_attribute(light_device, "MAC", "xx:yy:zz:aa:bb:cc");
-
-    esp_rmaker_node_add_device(node, light_device);
-    
-    /* Create a Fan device and add the relevant parameters to it */
-    fan_device = esp_rmaker_fan_device_create("Fan", NULL, DEFAULT_FAN_POWER);
-    esp_rmaker_device_add_cb(fan_device, write_cb, NULL);
-    esp_rmaker_device_add_param(fan_device, esp_rmaker_speed_param_create(ESP_RMAKER_DEF_SPEED_NAME, DEFAULT_FAN_SPEED));
-    esp_rmaker_node_add_device(node, fan_device);
-    
-    /* Create a Temperature Sensor device and add the relevant parameters to it */
-    temp_sensor_device = esp_rmaker_temp_sensor_device_create("Temperature Sensor", NULL, app_get_current_temperature());
-    esp_rmaker_node_add_device(node, temp_sensor_device);
+        /* Light, Fan and simulated Temperature Sensor removed to simplify firmware.
+           Soil moisture sensors and Pump remain. */
     
     /* NEW: Create Soil Moisture Sensor devices */
     init_soil_sensor_devices(node);
@@ -232,10 +223,6 @@ void app_main()
         abort();
     }
 
-    // TEMPORARY: Enable calibration
-    ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "Starting calibration in 5 seconds...");
-    ESP_LOGI(TAG, "Make sure sensors are in DRY AIR");
-    vTaskDelay(pdMS_TO_TICKS(5000));
-    soil_sensor_calibration_mode();  // Never returns
+    /* Normal operation: exit app_main after services started. */
+    return;
 }

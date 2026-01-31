@@ -52,8 +52,6 @@
 static const char *TAG = "app_driver";
 
 static bool g_power_state = DEFAULT_SWITCH_POWER;
-static float g_temperature = DEFAULT_TEMPERATURE;
-static TimerHandle_t sensor_timer;
 
 /* LED Indicator handle */
 static led_indicator_handle_t g_led_indicator = NULL;
@@ -74,19 +72,7 @@ static esp_err_t app_indicator_set_rgb(uint8_t red, uint8_t green, uint8_t blue)
     return led_indicator_set_rgb(g_led_indicator, SET_IRGB(MAX_INDEX, r_255, g_255, b_255));
 }
 
-static void app_sensor_update(TimerHandle_t handle)
-{
-    static float delta = 0.5;
-    g_temperature += delta;
-    if (g_temperature > 99) {
-        delta = -0.5;
-    } else if (g_temperature < 1) {
-        delta = 0.5;
-    }
-    esp_rmaker_param_update_and_report(
-                esp_rmaker_device_get_param_by_type(temp_sensor_device, ESP_RMAKER_PARAM_TEMPERATURE),
-                esp_rmaker_float(g_temperature));
-}
+/* Temperature simulation removed; real sensor (DHT22) will be integrated later */
 
 static void app_soil_sensor_update(TimerHandle_t handle)
 {
@@ -105,31 +91,41 @@ static void app_soil_sensor_update(TimerHandle_t handle)
             ESP_LOGW(TAG, "Skipping Soil Sensor %d - device not created", i + 1);
             continue;
         }
-        
-        // Check if reading is valid
-        if (sensor_values[i] < 0) {
-            ESP_LOGW(TAG, "Skipping Soil Sensor %d - invalid reading", i + 1);
-            continue;
-        }
-        
-        // Get the parameter
-        esp_rmaker_param_t *param = esp_rmaker_device_get_param_by_name(
-            soil_sensor_devices[i], 
+
+        /* Get the numeric value parameter (we reused temperature param name) */
+        esp_rmaker_param_t *val_param = esp_rmaker_device_get_param_by_name(
+            soil_sensor_devices[i],
             ESP_RMAKER_DEF_TEMPERATURE_NAME
         );
-        
-        if (param == NULL) {
-            ESP_LOGE(TAG, "Cannot get parameter for Soil Sensor %d", i + 1);
+
+        /* Get the companion Status parameter (string) */
+        esp_rmaker_param_t *status_param = esp_rmaker_device_get_param_by_name(
+            soil_sensor_devices[i],
+            "Status"
+        );
+
+        /* Handle disconnected/invalid sentinel (-1.0) */
+        if (sensor_values[i] == -1.0f) {
+            ESP_LOGW(TAG, "Soil Sensor %d disconnected - reporting status only", i + 1);
+            if (status_param) {
+                esp_rmaker_param_update_and_report(status_param, esp_rmaker_str("Disconnected"));
+            }
             continue;
         }
-        
-        // Update and report
-        ret = esp_rmaker_param_update_and_report(param, esp_rmaker_float(sensor_values[i]));
-        
-        if (ret == ESP_OK) {
-            ESP_LOGI(TAG, "✓ Rainmaker updated - Soil Sensor %d: %.1f%%", i + 1, sensor_values[i]);
-        } else {
-            ESP_LOGE(TAG, "✗ Failed to update Soil Sensor %d: %s", i + 1, esp_err_to_name(ret));
+
+        /* Valid reading -> update numeric value */
+        if (val_param) {
+            ret = esp_rmaker_param_update_and_report(val_param, esp_rmaker_float(sensor_values[i]));
+            if (ret == ESP_OK) {
+                ESP_LOGI(TAG, "✓ Rainmaker updated - Soil Sensor %d: %.1f%%", i + 1, sensor_values[i]);
+            } else {
+                ESP_LOGE(TAG, "✗ Failed to update Soil Sensor %d: %s", i + 1, esp_err_to_name(ret));
+            }
+        }
+
+        /* Also update status to Connected */
+        if (status_param) {
+            esp_rmaker_param_update_and_report(status_param, esp_rmaker_str("Connected"));
         }
     }
 }
@@ -176,22 +172,7 @@ esp_err_t app_soil_sensor_init(void)
     return ESP_OK;
 }
 
-float app_get_current_temperature()
-{
-    return g_temperature;
-}
-
-esp_err_t app_sensor_init(void)
-{
-    g_temperature = DEFAULT_TEMPERATURE;
-    sensor_timer = xTimerCreate("app_sensor_update_tm", (REPORTING_PERIOD * 1000) / portTICK_PERIOD_MS,
-                            pdTRUE, NULL, app_sensor_update);
-    if (sensor_timer) {
-        xTimerStart(sensor_timer, 0);
-        return ESP_OK;
-    }
-    return ESP_FAIL;
-}
+/* app_get_current_temperature and app_sensor_init removed (no simulated temperature) */
 
 static void app_indicator_set(bool state)
 {
@@ -274,7 +255,7 @@ static void push_btn_cb(void *arg, void *data)
     bool new_state = !g_power_state;
     app_driver_set_state(new_state);
     esp_rmaker_param_update_and_report(
-                esp_rmaker_device_get_param_by_type(switch_device, ESP_RMAKER_PARAM_POWER),
+                esp_rmaker_device_get_param_by_type(pump_device, ESP_RMAKER_PARAM_POWER),
                 esp_rmaker_bool(new_state));
 }
 
@@ -312,7 +293,7 @@ void app_driver_init()
     /* Configure the GPIO */
     gpio_config(&io_conf);
     app_indicator_init();
-    app_sensor_init();
+    /* temperature simulation disabled */
 
     /* NEW: Initialize I2C library (required before any I2C device init) */
     ESP_ERROR_CHECK(i2cdev_init());
