@@ -48,3 +48,7 @@ uint32_t app_driver_get_switch_off_interval(void);
 /* Auto-watering threshold functions */
 void app_driver_set_moisture_threshold(uint32_t threshold_percent);
 uint32_t app_driver_get_moisture_threshold(void);
+
+/* Automatic mode functions */
+void app_driver_set_auto_mode(bool auto_mode);
+bool app_driver_get_auto_mode(void);

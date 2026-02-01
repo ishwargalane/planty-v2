@@ -72,6 +72,9 @@ static time_t last_auto_activation_time = 0;
 /* Cooldown period between auto-activations (1 hour) */
 #define AUTO_ACTIVATION_COOLDOWN_SEC (60 * 60)  // 1 hour
 
+/* Automatic mode flag */
+static bool g_auto_mode = true;  // Default true (Automatic enabled)
+
 /* Cached parameter pointers for efficient updates */
 static esp_rmaker_param_t *avg_moisture_param = NULL;
 static esp_rmaker_param_t *sensor_params[NUM_SOIL_SENSORS] = {NULL};
@@ -160,17 +163,30 @@ static void app_soil_sensor_update(TimerHandle_t handle)
         time_t time_since_last_auto = current_time - last_auto_activation_time;
         
         if (time_since_last_auto >= AUTO_ACTIVATION_COOLDOWN_SEC) {
-            /* Activate pump automatically */
-            if (!app_driver_get_state()) {
-                ESP_LOGI(TAG, "🌱 Auto-watering triggered: moisture %.1f%% < threshold %lu%%", 
-                         average, moisture_threshold);
-                app_driver_set_state(true);
-                esp_rmaker_param_update_and_report(
-                    esp_rmaker_device_get_param_by_name(pump_device, ESP_RMAKER_DEF_POWER_NAME),
-                    esp_rmaker_bool(true));
-                last_auto_activation_time = current_time;
+            /* Check if Automatic mode is enabled */
+            if (g_auto_mode) {
+                /* Activate pump automatically */
+                if (!app_driver_get_state()) {
+                    ESP_LOGI(TAG, "🌱 Auto-watering triggered: moisture %.1f%% <= threshold %lu%%", 
+                             average, moisture_threshold);
+                    app_driver_set_state(true);
+                    esp_rmaker_param_update_and_report(
+                        esp_rmaker_device_get_param_by_name(pump_device, ESP_RMAKER_DEF_POWER_NAME),
+                        esp_rmaker_bool(true));
+                    last_auto_activation_time = current_time;
+                } else {
+                     ESP_LOGI(TAG, "Pump already ON, skipping auto-watering");
+                }
             } else {
-                 ESP_LOGI(TAG, "Pump already ON, skipping auto-watering");
+                /* Auto mode DISABLED: Send Alert Notification */
+                ESP_LOGW(TAG, "⚠️ Moisture low (%.1f%%) but Automatic mode is OFF. Sending alert.", average);
+                
+                char alert_msg[100];
+                snprintf(alert_msg, sizeof(alert_msg), "Moisture low (%.1f%%), but Auto-Watering is OFF.", average);
+                esp_rmaker_raise_alert(alert_msg);
+                
+                /* Update last activation time so we don't spam alerts every minute */
+                last_auto_activation_time = current_time;
             }
         } else {
             ESP_LOGI(TAG, "⏳ Auto-watering on cooldown: %ld seconds remaining", 
@@ -199,6 +215,17 @@ void app_driver_set_moisture_threshold(uint32_t threshold_percent)
 uint32_t app_driver_get_moisture_threshold(void)
 {
     return moisture_threshold;
+}
+
+void app_driver_set_auto_mode(bool auto_mode)
+{
+    g_auto_mode = auto_mode;
+    ESP_LOGI(TAG, "Automatic mode updated to %s", auto_mode ? "ON" : "OFF");
+}
+
+bool app_driver_get_auto_mode(void)
+{
+    return g_auto_mode;
 }
 
 /* 

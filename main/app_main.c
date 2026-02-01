@@ -61,6 +61,12 @@ static esp_err_t write_cb(const esp_rmaker_device_t *device, const esp_rmaker_pa
         if (device == soil_monitor_device) {
             app_driver_set_moisture_threshold(val.val.i);
         }
+    } else if (strcmp(param_name, "Automatic") == 0) {
+        ESP_LOGI(TAG, "Received value = %s for %s - %s",
+                val.val.b? "true" : "false", device_name, param_name);
+        if (device == pump_device) {
+            app_driver_set_auto_mode(val.val.b);
+        }
     } else if (strcmp(param_name, ESP_RMAKER_DEF_BRIGHTNESS_NAME) == 0) {
         ESP_LOGI(TAG, "Received value = %d for %s - %s",
                 val.val.i, device_name, param_name);
@@ -200,6 +206,14 @@ void app_main()
         esp_rmaker_param_add_ui_type(auto_off_param, "esp.ui.slider");
         esp_rmaker_param_add_bounds(auto_off_param, esp_rmaker_int(1), esp_rmaker_int(300), esp_rmaker_int(1));
         esp_rmaker_device_add_param(pump_device, auto_off_param);
+    }
+    
+    /* Add Automatic Mode parameter (toggle: default true) */
+    esp_rmaker_param_t *auto_mode_param = esp_rmaker_param_create(
+        "Automatic", NULL, esp_rmaker_bool(true), PROP_FLAG_READ | PROP_FLAG_WRITE);
+    if (auto_mode_param) {
+        esp_rmaker_param_add_ui_type(auto_mode_param, "esp.ui.toggle");
+        esp_rmaker_device_add_param(pump_device, auto_mode_param);
     }
     
     esp_rmaker_node_add_device(node, pump_device);
