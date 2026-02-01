@@ -122,26 +122,6 @@ static void init_soil_sensor_devices(esp_rmaker_node_t *node)
     }
     ESP_LOGI(TAG, "✓ Individual sensor parameters created");
     
-    /* Add status parameters for each sensor */
-    const char *status_names[] = {
-        PARAM_SENSOR_1_STATUS,
-        PARAM_SENSOR_2_STATUS,
-        PARAM_SENSOR_3_STATUS,
-        PARAM_SENSOR_4_STATUS
-    };
-    for (int i = 0; i < NUM_SOIL_SENSORS; i++) {
-        esp_rmaker_param_t *status_param = esp_rmaker_param_create(
-            status_names[i],
-            "esp.param.name",
-            esp_rmaker_str("Disconnected"),
-            PROP_FLAG_READ
-        );
-        if (status_param) {
-            esp_rmaker_device_add_param(soil_monitor_device, status_param);
-        }
-    }
-    ESP_LOGI(TAG, "✓ Status parameters created");
-    
     /* Add device to node */
     esp_err_t err = esp_rmaker_node_add_device(node, soil_monitor_device);
     if (err != ESP_OK) {

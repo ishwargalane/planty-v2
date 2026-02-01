@@ -62,7 +62,6 @@ static TimerHandle_t soil_sensor_timer;
 /* Cached parameter pointers for efficient updates */
 static esp_rmaker_param_t *avg_moisture_param = NULL;
 static esp_rmaker_param_t *sensor_params[NUM_SOIL_SENSORS] = {NULL};
-static esp_rmaker_param_t *status_params[NUM_SOIL_SENSORS] = {NULL};
 
 static esp_err_t app_indicator_set_rgb(uint8_t red, uint8_t green, uint8_t blue)
 {
@@ -90,7 +89,7 @@ static void app_soil_sensor_update(TimerHandle_t handle)
         return;
     }
 
-    /* Calculate average from connected sensors only */
+    /* Calculate average from all sensors */
     float sum = 0.0f;
     int valid_count = 0;
     
@@ -103,33 +102,17 @@ static void app_soil_sensor_update(TimerHandle_t handle)
     
     float average = (valid_count > 0) ? (sum / valid_count) : 0.0f;
     
-    /* Update average moisture parameter (always report, even if 0) */
+    /* Update average moisture parameter */
     if (avg_moisture_param) {
         esp_rmaker_param_update_and_report(avg_moisture_param, esp_rmaker_float(average));
-        if (valid_count > 0) {
-            ESP_LOGI(TAG, "✓ Average Moisture: %.1f%% (%d/%d sensors active)", 
-                     average, valid_count, NUM_SOIL_SENSORS);
-        } else {
-            ESP_LOGW(TAG, "⚠ No sensors connected - Average: 0.0%%");
-        }
+        ESP_LOGI(TAG, "✓ Average Moisture: %.1f%% (%d/%d sensors)", 
+                 average, valid_count, NUM_SOIL_SENSORS);
     }
     
     /* Update individual sensor parameters */
     for (int i = 0; i < NUM_SOIL_SENSORS; i++) {
-        if (sensor_values[i] == -1.0f) {
-            /* Sensor disconnected - update status only, skip value */
-            if (status_params[i]) {
-                esp_rmaker_param_update_and_report(status_params[i], esp_rmaker_str("Disconnected"));
-            }
-            ESP_LOGD(TAG, "Sensor %d: Disconnected", i + 1);
-        } else {
-            /* Sensor connected - update both value and status */
-            if (sensor_params[i]) {
-                esp_rmaker_param_update_and_report(sensor_params[i], esp_rmaker_float(sensor_values[i]));
-            }
-            if (status_params[i]) {
-                esp_rmaker_param_update_and_report(status_params[i], esp_rmaker_str("Connected"));
-            }
+        if (sensor_values[i] != -1.0f && sensor_params[i]) {
+            esp_rmaker_param_update_and_report(sensor_params[i], esp_rmaker_float(sensor_values[i]));
             ESP_LOGI(TAG, "✓ Sensor %d: %.1f%%", i + 1, sensor_values[i]);
         }
     }
@@ -153,21 +136,11 @@ esp_err_t app_soil_sensor_init(void)
         );
         
         const char *sensor_names[] = {PARAM_SENSOR_1, PARAM_SENSOR_2, PARAM_SENSOR_3, PARAM_SENSOR_4};
-        const char *status_names[] = {
-            PARAM_SENSOR_1_STATUS,
-            PARAM_SENSOR_2_STATUS,
-            PARAM_SENSOR_3_STATUS,
-            PARAM_SENSOR_4_STATUS
-        };
         
         for (int i = 0; i < NUM_SOIL_SENSORS; i++) {
             sensor_params[i] = esp_rmaker_device_get_param_by_name(
                 soil_monitor_device,
                 sensor_names[i]
-            );
-            status_params[i] = esp_rmaker_device_get_param_by_name(
-                soil_monitor_device,
-                status_names[i]
             );
         }
         
