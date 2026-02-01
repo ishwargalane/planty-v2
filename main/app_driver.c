@@ -59,6 +59,9 @@ static led_indicator_handle_t g_led_indicator = NULL;
 /* Soil Sensor handle */
 static TimerHandle_t soil_sensor_timer;
 
+/* Auto-off interval for pump (in seconds) */
+static uint32_t switch_off_interval = 10;  // Default 10 seconds
+
 /* Cached parameter pointers for efficient updates */
 static esp_rmaker_param_t *avg_moisture_param = NULL;
 static esp_rmaker_param_t *sensor_params[NUM_SOIL_SENSORS] = {NULL};
@@ -94,7 +97,7 @@ static void app_soil_sensor_update(TimerHandle_t handle)
     int valid_count = 0;
     
     for (int i = 0; i < NUM_SOIL_SENSORS; i++) {
-        if (sensor_values[i] != -1.0f) {
+        if (sensor_values[i] != -1.0f && sensor_values[i] > 0.0f) {
             sum += sensor_values[i];
             valid_count++;
         }
@@ -115,6 +118,39 @@ static void app_soil_sensor_update(TimerHandle_t handle)
             esp_rmaker_param_update_and_report(sensor_params[i], esp_rmaker_float(sensor_values[i]));
             ESP_LOGI(TAG, "✓ Sensor %d: %.1f%%", i + 1, sensor_values[i]);
         }
+    }
+}
+
+void app_driver_set_switch_off_interval(uint32_t interval_seconds)
+{
+    switch_off_interval = interval_seconds;
+    ESP_LOGI(TAG, "Switch off interval updated to %lu seconds", interval_seconds);
+}
+
+uint32_t app_driver_get_switch_off_interval(void)
+{
+    return switch_off_interval;
+}
+
+/* 
+This is to switch off the water supply after a set interval. The interval is configurable from the app.
+This is to avoid the water supply being on for a long time.
+*/
+void turnOffSwitchAfterSetInterval(void *pvParameters)
+{
+    while (1)
+    {
+        if (app_driver_get_state())
+        {   
+            /* Use configurable interval instead of hardcoded value */
+            vTaskDelay((switch_off_interval * 1000) / portTICK_PERIOD_MS);    
+            app_driver_set_state(false);
+            esp_rmaker_param_update_and_report(
+                esp_rmaker_device_get_param_by_name(pump_device, ESP_RMAKER_DEF_POWER_NAME),
+                esp_rmaker_bool(false));
+            ESP_LOGI(TAG, "Pump turned off after set interval of %lu seconds", switch_off_interval);
+        }
+        vTaskDelay(5000 / portTICK_PERIOD_MS);
     }
 }
 esp_err_t app_soil_sensor_init(void)
@@ -315,9 +351,10 @@ void app_driver_init()
     
     /* NEW: Scan I2C bus to verify ADS1115 connection */
     i2c_scanner();  
-
-    /* NEW: Initialize soil moisture sensors */
-    ESP_ERROR_CHECK(app_soil_sensor_init());
+    
+    /* Start auto-off timer task */
+    xTaskCreate(turnOffSwitchAfterSetInterval, "auto_off_task", 2048, NULL, 5, NULL);
+    ESP_LOGI(TAG, "Auto-off timer task started (default interval: %lu seconds)", switch_off_interval);
 }
 
 int IRAM_ATTR app_driver_set_state(bool state)

@@ -49,6 +49,12 @@ static esp_err_t write_cb(const esp_rmaker_device_t *device, const esp_rmaker_pa
         if (device == pump_device) {
             app_driver_set_state(val.val.b);
         }
+    } else if (strcmp(param_name, "Auto-Off Interval") == 0) {
+        ESP_LOGI(TAG, "Received value = %d for %s - %s",
+                val.val.i, device_name, param_name);
+        if (device == pump_device) {
+            app_driver_set_switch_off_interval(val.val.i);
+        }
     } else if (strcmp(param_name, ESP_RMAKER_DEF_BRIGHTNESS_NAME) == 0) {
         ESP_LOGI(TAG, "Received value = %d for %s - %s",
                 val.val.i, device_name, param_name);
@@ -170,6 +176,16 @@ void app_main()
     esp_rmaker_device_add_cb(pump_device, write_cb, NULL);
     esp_rmaker_device_add_attribute(pump_device, "device", "pump");
     esp_rmaker_device_add_attribute(pump_device, "Serial Number", "PN-001");
+    
+    /* Add Auto-Off Interval parameter (slider: 1-300 seconds, default 10) */
+    esp_rmaker_param_t *auto_off_param = esp_rmaker_param_create(
+        "Auto-Off Interval", NULL, esp_rmaker_int(10), PROP_FLAG_READ | PROP_FLAG_WRITE);
+    if (auto_off_param) {
+        esp_rmaker_param_add_ui_type(auto_off_param, "esp.ui.slider");
+        esp_rmaker_param_add_bounds(auto_off_param, esp_rmaker_int(1), esp_rmaker_int(300), esp_rmaker_int(1));
+        esp_rmaker_device_add_param(pump_device, auto_off_param);
+    }
+    
     esp_rmaker_node_add_device(node, pump_device);
 
         /* Light, Fan and simulated Temperature Sensor removed to simplify firmware.
@@ -177,6 +193,9 @@ void app_main()
     
     /* NEW: Create Soil Moisture Sensor devices */
     init_soil_sensor_devices(node);
+
+    /* Initialize soil sensor hardware and start periodic reading */
+    ESP_ERROR_CHECK(app_soil_sensor_init());
 
     /* Enable OTA */
     esp_rmaker_ota_enable_default();
