@@ -19,8 +19,19 @@
 
 extern esp_rmaker_device_t *pump_device;
 
-/* NEW: Soil moisture sensor devices */
-extern esp_rmaker_device_t *soil_sensor_devices[];
+/* Consolidated soil moisture monitor device */
+extern esp_rmaker_device_t *soil_monitor_device;
+
+/* Parameter name macros for consistency */
+#define PARAM_AVERAGE_MOISTURE      "Average Moisture"
+#define PARAM_SENSOR_1              "Sensor 1"
+#define PARAM_SENSOR_2              "Sensor 2"
+#define PARAM_SENSOR_3              "Sensor 3"
+#define PARAM_SENSOR_4              "Sensor 4"
+#define PARAM_SENSOR_1_STATUS       "Sensor 1 Status"
+#define PARAM_SENSOR_2_STATUS       "Sensor 2 Status"
+#define PARAM_SENSOR_3_STATUS       "Sensor 3 Status"
+#define PARAM_SENSOR_4_STATUS       "Sensor 4 Status"
 
 void app_driver_init(void);
 int app_driver_set_state(bool state);

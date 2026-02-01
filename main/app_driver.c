@@ -59,6 +59,11 @@ static led_indicator_handle_t g_led_indicator = NULL;
 /* Soil Sensor handle */
 static TimerHandle_t soil_sensor_timer;
 
+/* Cached parameter pointers for efficient updates */
+static esp_rmaker_param_t *avg_moisture_param = NULL;
+static esp_rmaker_param_t *sensor_params[NUM_SOIL_SENSORS] = {NULL};
+static esp_rmaker_param_t *status_params[NUM_SOIL_SENSORS] = {NULL};
+
 static esp_err_t app_indicator_set_rgb(uint8_t red, uint8_t green, uint8_t blue)
 {
     if (!g_led_indicator) {
@@ -78,54 +83,54 @@ static void app_soil_sensor_update(TimerHandle_t handle)
 {
     float sensor_values[NUM_SOIL_SENSORS];
     
+    /* Read all sensors */
     esp_err_t ret = soil_sensor_read_all(sensor_values, NUM_SOIL_SENSORS);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to read soil sensors");
         return;
     }
 
-    // Update each soil sensor device in Rainmaker
+    /* Calculate average from connected sensors only */
+    float sum = 0.0f;
+    int valid_count = 0;
+    
     for (int i = 0; i < NUM_SOIL_SENSORS; i++) {
-        // Check if device was created successfully
-        if (soil_sensor_devices[i] == NULL) {
-            ESP_LOGW(TAG, "Skipping Soil Sensor %d - device not created", i + 1);
-            continue;
+        if (sensor_values[i] != -1.0f) {
+            sum += sensor_values[i];
+            valid_count++;
         }
-
-        /* Get the numeric value parameter (we reused temperature param name) */
-        esp_rmaker_param_t *val_param = esp_rmaker_device_get_param_by_name(
-            soil_sensor_devices[i],
-            ESP_RMAKER_DEF_TEMPERATURE_NAME
-        );
-
-        /* Get the companion Status parameter (string) */
-        esp_rmaker_param_t *status_param = esp_rmaker_device_get_param_by_name(
-            soil_sensor_devices[i],
-            "Status"
-        );
-
-        /* Handle disconnected/invalid sentinel (-1.0) */
+    }
+    
+    float average = (valid_count > 0) ? (sum / valid_count) : 0.0f;
+    
+    /* Update average moisture parameter (always report, even if 0) */
+    if (avg_moisture_param) {
+        esp_rmaker_param_update_and_report(avg_moisture_param, esp_rmaker_float(average));
+        if (valid_count > 0) {
+            ESP_LOGI(TAG, "✓ Average Moisture: %.1f%% (%d/%d sensors active)", 
+                     average, valid_count, NUM_SOIL_SENSORS);
+        } else {
+            ESP_LOGW(TAG, "⚠ No sensors connected - Average: 0.0%%");
+        }
+    }
+    
+    /* Update individual sensor parameters */
+    for (int i = 0; i < NUM_SOIL_SENSORS; i++) {
         if (sensor_values[i] == -1.0f) {
-            ESP_LOGW(TAG, "Soil Sensor %d disconnected - reporting status only", i + 1);
-            if (status_param) {
-                esp_rmaker_param_update_and_report(status_param, esp_rmaker_str("Disconnected"));
+            /* Sensor disconnected - update status only, skip value */
+            if (status_params[i]) {
+                esp_rmaker_param_update_and_report(status_params[i], esp_rmaker_str("Disconnected"));
             }
-            continue;
-        }
-
-        /* Valid reading -> update numeric value */
-        if (val_param) {
-            ret = esp_rmaker_param_update_and_report(val_param, esp_rmaker_float(sensor_values[i]));
-            if (ret == ESP_OK) {
-                ESP_LOGI(TAG, "✓ Rainmaker updated - Soil Sensor %d: %.1f%%", i + 1, sensor_values[i]);
-            } else {
-                ESP_LOGE(TAG, "✗ Failed to update Soil Sensor %d: %s", i + 1, esp_err_to_name(ret));
+            ESP_LOGD(TAG, "Sensor %d: Disconnected", i + 1);
+        } else {
+            /* Sensor connected - update both value and status */
+            if (sensor_params[i]) {
+                esp_rmaker_param_update_and_report(sensor_params[i], esp_rmaker_float(sensor_values[i]));
             }
-        }
-
-        /* Also update status to Connected */
-        if (status_param) {
-            esp_rmaker_param_update_and_report(status_param, esp_rmaker_str("Connected"));
+            if (status_params[i]) {
+                esp_rmaker_param_update_and_report(status_params[i], esp_rmaker_str("Connected"));
+            }
+            ESP_LOGI(TAG, "✓ Sensor %d: %.1f%%", i + 1, sensor_values[i]);
         }
     }
 }
@@ -133,14 +138,45 @@ esp_err_t app_soil_sensor_init(void)
 {
     esp_err_t ret;
     
-    // Initialize the soil moisture sensor hardware
+    /* Initialize the soil moisture sensor hardware */
     ret = soil_sensor_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize soil sensor hardware");
         return ret;
     }
     
-    // Create timer for periodic sensor reading (1 minute)
+    /* Cache parameter pointers for efficient updates (avoid repeated lookups) */
+    if (soil_monitor_device) {
+        avg_moisture_param = esp_rmaker_device_get_param_by_name(
+            soil_monitor_device, 
+            PARAM_AVERAGE_MOISTURE
+        );
+        
+        const char *sensor_names[] = {PARAM_SENSOR_1, PARAM_SENSOR_2, PARAM_SENSOR_3, PARAM_SENSOR_4};
+        const char *status_names[] = {
+            PARAM_SENSOR_1_STATUS,
+            PARAM_SENSOR_2_STATUS,
+            PARAM_SENSOR_3_STATUS,
+            PARAM_SENSOR_4_STATUS
+        };
+        
+        for (int i = 0; i < NUM_SOIL_SENSORS; i++) {
+            sensor_params[i] = esp_rmaker_device_get_param_by_name(
+                soil_monitor_device,
+                sensor_names[i]
+            );
+            status_params[i] = esp_rmaker_device_get_param_by_name(
+                soil_monitor_device,
+                status_names[i]
+            );
+        }
+        
+        ESP_LOGI(TAG, "Parameter pointers cached successfully");
+    } else {
+        ESP_LOGW(TAG, "Soil monitor device not initialized - cannot cache parameters");
+    }
+    
+    /* Create timer for periodic sensor reading (1 minute) */
     soil_sensor_timer = xTimerCreate(
         "soil_sensor_update_tm",
         (SOIL_SENSOR_READ_INTERVAL_SEC * 1000) / portTICK_PERIOD_MS,
@@ -154,11 +190,7 @@ esp_err_t app_soil_sensor_init(void)
         return ESP_FAIL;
     }
     
-    // REMOVED: Do NOT do immediate first reading here
-    // The devices aren't created yet!
-    // app_soil_sensor_update(NULL);
-    
-    // Start the timer - first reading will happen after 1 minute
+    /* Start the timer - first reading will happen after 1 minute */
     if (xTimerStart(soil_sensor_timer, 0) != pdPASS) {
         ESP_LOGE(TAG, "Failed to start soil sensor timer");
         return ESP_FAIL;

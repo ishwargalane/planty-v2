@@ -31,8 +31,8 @@ static const char *TAG = "app_main";
 
 esp_rmaker_device_t *pump_device;
 
-/* NEW: Array of soil moisture sensor devices */
-esp_rmaker_device_t *soil_sensor_devices[NUM_SOIL_SENSORS];
+/* Consolidated soil moisture monitor device */
+esp_rmaker_device_t *soil_monitor_device;
 
 /* Callback to handle commands received from the RainMaker cloud */
 static esp_err_t write_cb(const esp_rmaker_device_t *device, const esp_rmaker_param_t *param,
@@ -63,84 +63,93 @@ static esp_err_t write_cb(const esp_rmaker_device_t *device, const esp_rmaker_pa
     return ESP_OK;
 }
 
-/* Function to create and initialize soil moisture sensor devices */
-/* Function to create and initialize soil moisture sensor devices */
+/* Function to create and initialize consolidated soil moisture monitor device */
 static void init_soil_sensor_devices(esp_rmaker_node_t *node)
 {
-    char device_name[32];
-    char serial_number[32];
+    ESP_LOGI(TAG, "Creating consolidated soil moisture monitor device...");
     
-    ESP_LOGI(TAG, "Creating %d soil moisture sensor devices...", NUM_SOIL_SENSORS);
+    /* Create base temperature sensor device for primary average display */
+    soil_monitor_device = esp_rmaker_device_create(
+        "Soil Moisture Monitor",
+        "esp.device.temperature-sensor",
+        NULL
+    );
     
+    if (soil_monitor_device == NULL) {
+        ESP_LOGE(TAG, "Failed to create soil monitor device");
+        return;
+    }
+    
+    /* Add device attributes */
+    esp_rmaker_device_add_attribute(soil_monitor_device, "sensor_type", "aggregate");
+    esp_rmaker_device_add_attribute(soil_monitor_device, "unit", "percent");
+    
+    /* Create and add average moisture parameter (primary - shows on icon) */
+    esp_rmaker_param_t *avg_param = esp_rmaker_param_create(
+        PARAM_AVERAGE_MOISTURE,
+        ESP_RMAKER_DEF_TEMPERATURE_NAME,
+        esp_rmaker_float(0.0),
+        PROP_FLAG_READ
+    );
+    if (avg_param) {
+        esp_rmaker_device_add_param(soil_monitor_device, avg_param);
+        esp_rmaker_device_assign_primary_param(soil_monitor_device, avg_param);
+        esp_rmaker_param_add_ui_type(avg_param, "esp.ui.slider");
+        esp_rmaker_param_add_bounds(avg_param,
+                                   esp_rmaker_float(0.0),
+                                   esp_rmaker_float(100.0),
+                                   esp_rmaker_float(0.1));
+        ESP_LOGI(TAG, "✓ Average moisture parameter created");
+    }
+    
+    /* Add individual sensor parameters */
+    const char *sensor_names[] = {PARAM_SENSOR_1, PARAM_SENSOR_2, PARAM_SENSOR_3, PARAM_SENSOR_4};
     for (int i = 0; i < NUM_SOIL_SENSORS; i++) {
-        // Create unique device name
-        snprintf(device_name, sizeof(device_name), "Soil Moisture %d", i + 1);
-        snprintf(serial_number, sizeof(serial_number), "SM-%d", 1000 + i);
-        
-        ESP_LOGI(TAG, "Creating device %d: %s", i, device_name);
-        
-        /* Create temperature sensor device */
-        soil_sensor_devices[i] = esp_rmaker_temp_sensor_device_create(
-            device_name,
-            NULL,  // No private data
-            0.0f   // Initial value
+        esp_rmaker_param_t *sensor_param = esp_rmaker_param_create(
+            sensor_names[i],
+            ESP_RMAKER_DEF_TEMPERATURE_NAME,
+            esp_rmaker_float(0.0),
+            PROP_FLAG_READ
         );
-        
-        if (soil_sensor_devices[i] == NULL) {
-            ESP_LOGE(TAG, "FAILED to create soil sensor device %d", i);
-            continue; // Skip this device
-        }
-        
-        ESP_LOGI(TAG, "Device %d created successfully at %p", i, soil_sensor_devices[i]);
-        
-        // Add device to the Rainmaker node
-        esp_err_t err = esp_rmaker_node_add_device(node, soil_sensor_devices[i]);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to add device %d to node: %s", i, esp_err_to_name(err));
-            continue;
-        }
-        
-        // Add custom attributes
-        esp_rmaker_device_add_attribute(soil_sensor_devices[i], 
-                                       "sensor_type", "soil_moisture");
-        esp_rmaker_device_add_attribute(soil_sensor_devices[i], 
-                                       "unit", "percent");
-        esp_rmaker_device_add_attribute(soil_sensor_devices[i], 
-                                       "Serial Number", serial_number);
-        
-        // Get the temperature parameter
-        esp_rmaker_param_t *moisture_param = esp_rmaker_device_get_param_by_name(
-            soil_sensor_devices[i], 
-            ESP_RMAKER_DEF_TEMPERATURE_NAME
-        );
-        
-        if (moisture_param) {
-            // Add UI customization
-            esp_rmaker_param_add_ui_type(moisture_param, "esp.ui.slider");
-            esp_rmaker_param_add_bounds(moisture_param, 
+        if (sensor_param) {
+            esp_rmaker_device_add_param(soil_monitor_device, sensor_param);
+            esp_rmaker_param_add_ui_type(sensor_param, "esp.ui.slider");
+            esp_rmaker_param_add_bounds(sensor_param,
                                        esp_rmaker_float(0.0),
                                        esp_rmaker_float(100.0),
                                        esp_rmaker_float(0.1));
-            ESP_LOGI(TAG, "Device %d parameter configured", i);
-        } else {
-            ESP_LOGW(TAG, "Could not get parameter for device %d", i);
         }
-
-        /* Add a companion Status parameter (string) to indicate connectivity */
+    }
+    ESP_LOGI(TAG, "✓ Individual sensor parameters created");
+    
+    /* Add status parameters for each sensor */
+    const char *status_names[] = {
+        PARAM_SENSOR_1_STATUS,
+        PARAM_SENSOR_2_STATUS,
+        PARAM_SENSOR_3_STATUS,
+        PARAM_SENSOR_4_STATUS
+    };
+    for (int i = 0; i < NUM_SOIL_SENSORS; i++) {
         esp_rmaker_param_t *status_param = esp_rmaker_param_create(
-            "Status",
-            "string",
-            esp_rmaker_str("Connected"),
+            status_names[i],
+            "esp.param.name",
+            esp_rmaker_str("Disconnected"),
             PROP_FLAG_READ
         );
         if (status_param) {
-            esp_rmaker_device_add_param(soil_sensor_devices[i], status_param);
+            esp_rmaker_device_add_param(soil_monitor_device, status_param);
         }
-        
-        ESP_LOGI(TAG, "✓ Soil moisture sensor device %d setup complete", i);
+    }
+    ESP_LOGI(TAG, "✓ Status parameters created");
+    
+    /* Add device to node */
+    esp_err_t err = esp_rmaker_node_add_device(node, soil_monitor_device);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add soil monitor device to node: %s", esp_err_to_name(err));
+        return;
     }
     
-    ESP_LOGI(TAG, "All soil moisture sensor devices created");
+    ESP_LOGI(TAG, "✓ Soil moisture monitor device setup complete");
 }
 
 void app_main()
