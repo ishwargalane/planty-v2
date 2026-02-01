@@ -44,3 +44,7 @@ esp_err_t app_soil_sensor_init(void);
 /* Auto-off timer functions */
 void app_driver_set_switch_off_interval(uint32_t interval_seconds);
 uint32_t app_driver_get_switch_off_interval(void);
+
+/* Auto-watering threshold functions */
+void app_driver_set_moisture_threshold(uint32_t threshold_percent);
+uint32_t app_driver_get_moisture_threshold(void);

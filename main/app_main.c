@@ -55,6 +55,12 @@ static esp_err_t write_cb(const esp_rmaker_device_t *device, const esp_rmaker_pa
         if (device == pump_device) {
             app_driver_set_switch_off_interval(val.val.i);
         }
+    } else if (strcmp(param_name, "Moisture Threshold") == 0) {
+        ESP_LOGI(TAG, "Received value = %d for %s - %s",
+                val.val.i, device_name, param_name);
+        if (device == soil_monitor_device) {
+            app_driver_set_moisture_threshold(val.val.i);
+        }
     } else if (strcmp(param_name, ESP_RMAKER_DEF_BRIGHTNESS_NAME) == 0) {
         ESP_LOGI(TAG, "Received value = %d for %s - %s",
                 val.val.i, device_name, param_name);
@@ -127,6 +133,16 @@ static void init_soil_sensor_devices(esp_rmaker_node_t *node)
         }
     }
     ESP_LOGI(TAG, "✓ Individual sensor parameters created");
+    
+    /* Add Moisture Threshold parameter (slider: 0-100%, default 30%) */
+    esp_rmaker_param_t *threshold_param = esp_rmaker_param_create(
+        "Moisture Threshold", NULL, esp_rmaker_int(30), PROP_FLAG_READ | PROP_FLAG_WRITE);
+    if (threshold_param) {
+        esp_rmaker_param_add_ui_type(threshold_param, "esp.ui.slider");
+        esp_rmaker_param_add_bounds(threshold_param, esp_rmaker_int(0), esp_rmaker_int(100), esp_rmaker_int(1));
+        esp_rmaker_device_add_param(soil_monitor_device, threshold_param);
+        ESP_LOGI(TAG, "✓ Moisture threshold parameter created");
+    }
     
     /* Add device to node */
     esp_err_t err = esp_rmaker_node_add_device(node, soil_monitor_device);

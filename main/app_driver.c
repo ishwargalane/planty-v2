@@ -10,6 +10,7 @@
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/timers.h>
+#include <time.h>
 #include "i2c_scanner.h"
 
 #include <i2cdev.h>
@@ -62,6 +63,15 @@ static TimerHandle_t soil_sensor_timer;
 /* Auto-off interval for pump (in seconds) */
 static uint32_t switch_off_interval = 10;  // Default 10 seconds
 
+/* Moisture threshold for auto-watering (in percent) */
+static uint32_t moisture_threshold = 30;  // Default 30%
+
+/* Last auto-activation timestamp (for cooldown) */
+static time_t last_auto_activation_time = 0;
+
+/* Cooldown period between auto-activations (1 hour) */
+#define AUTO_ACTIVATION_COOLDOWN_SEC (60 * 60)  // 1 hour
+
 /* Cached parameter pointers for efficient updates */
 static esp_rmaker_param_t *avg_moisture_param = NULL;
 static esp_rmaker_param_t *sensor_params[NUM_SOIL_SENSORS] = {NULL};
@@ -92,18 +102,40 @@ static void app_soil_sensor_update(TimerHandle_t handle)
         return;
     }
 
-    /* Calculate average from all sensors */
-    float sum = 0.0f;
-    int valid_count = 0;
+    /* Calculate average from all sensors with smart filtering */
+    float sum_non_zero = 0.0f;
+    int count_non_zero = 0;
+    int count_zeros = 0;
     
     for (int i = 0; i < NUM_SOIL_SENSORS; i++) {
-        if (sensor_values[i] != -1.0f && sensor_values[i] > 0.0f) {
-            sum += sensor_values[i];
-            valid_count++;
+        if (sensor_values[i] != -1.0f) {
+            if (sensor_values[i] > 0.0f) {
+                sum_non_zero += sensor_values[i];
+                count_non_zero++;
+            } else {
+                count_zeros++;
+            }
         }
     }
     
-    float average = (valid_count > 0) ? (sum / valid_count) : 0.0f;
+    /* Logic:
+     * 1. If we have non-zero values, use THEIR average (ignore 0s as potential disconnects)
+     * 2. If NO non-zero values but we have zeros, then average is 0.0 (fully dry)
+     * 3. If neither, duplicate/invalid
+     */
+    float average = 0.0f;
+    int valid_count = 0;
+    
+    if (count_non_zero > 0) {
+        average = sum_non_zero / count_non_zero;
+        valid_count = count_non_zero; // Report count of sensors used for calculation
+    } else if (count_zeros > 0) {
+        average = 0.0f;
+        valid_count = count_zeros;
+    } else {
+        /* No valid readings */
+        valid_count = 0;
+    }
     
     /* Update average moisture parameter */
     if (avg_moisture_param) {
@@ -119,6 +151,32 @@ static void app_soil_sensor_update(TimerHandle_t handle)
             ESP_LOGI(TAG, "✓ Sensor %d: %.1f%%", i + 1, sensor_values[i]);
         }
     }
+    
+    /* Auto-watering logic: check if moisture below threshold */
+    /* Auto-watering logic: check if moisture below or equal to threshold */
+    if (valid_count > 0 && average <= moisture_threshold) {
+        /* Check cooldown period */
+        time_t current_time = time(NULL);
+        time_t time_since_last_auto = current_time - last_auto_activation_time;
+        
+        if (time_since_last_auto >= AUTO_ACTIVATION_COOLDOWN_SEC) {
+            /* Activate pump automatically */
+            if (!app_driver_get_state()) {
+                ESP_LOGI(TAG, "🌱 Auto-watering triggered: moisture %.1f%% < threshold %lu%%", 
+                         average, moisture_threshold);
+                app_driver_set_state(true);
+                esp_rmaker_param_update_and_report(
+                    esp_rmaker_device_get_param_by_name(pump_device, ESP_RMAKER_DEF_POWER_NAME),
+                    esp_rmaker_bool(true));
+                last_auto_activation_time = current_time;
+            } else {
+                 ESP_LOGI(TAG, "Pump already ON, skipping auto-watering");
+            }
+        } else {
+            ESP_LOGI(TAG, "⏳ Auto-watering on cooldown: %ld seconds remaining", 
+                     (long)(AUTO_ACTIVATION_COOLDOWN_SEC - time_since_last_auto));
+        }
+    }
 }
 
 void app_driver_set_switch_off_interval(uint32_t interval_seconds)
@@ -130,6 +188,17 @@ void app_driver_set_switch_off_interval(uint32_t interval_seconds)
 uint32_t app_driver_get_switch_off_interval(void)
 {
     return switch_off_interval;
+}
+
+void app_driver_set_moisture_threshold(uint32_t threshold_percent)
+{
+    moisture_threshold = threshold_percent;
+    ESP_LOGI(TAG, "Moisture threshold updated to %lu%%", threshold_percent);
+}
+
+uint32_t app_driver_get_moisture_threshold(void)
+{
+    return moisture_threshold;
 }
 
 /* 
