@@ -14,21 +14,32 @@ To upload firmware (e.g., to ESP32) via USB in the dev container on Windows:
    - Attach (replace `<BUSID>`): `usbipd attach --wsl --busid <BUSID>`.
    - Verify in WSL2: `ls /dev/tty*` or `lsusb`.
 
-3. **Edit .devcontainer/devcontainer.json**:
-   - Add mounts for USB access (after `runArgs`):
-     ```json
-     "mounts": ["source=/dev/bus/usb,target=/dev/bus/usb,type=bind"]
-     ```
-     - For security, use device-specific if known: `"source=/dev/ttyUSB0,target=/dev/ttyUSB0,type=bind"`.
+## Install ESP-IDF and ESP RainMaker on WSL2 manually
+sudo apt-get install git wget flex bison gperf python3 python3-pip python3-venv cmake ninja-build ccache libffi-dev libssl-dev dfu-util libusb-1.0-0
+python --version
 
-4. **Rebuild the dev container**:
-   - In VS Code, Command Palette: "Dev Containers: Rebuild Container".
+mkdir -p ~/esp
+cd ~/esp
+git clone -b v5.5.2 --recursive https://github.com/espressif/esp-idf.git
 
-5. **Verify in container**:
-   - Open terminal: `ls /dev/tty*` or `lsusb`.
-   - Test upload: `idf.py flash` or `esptool.py`.
+cd ~/esp/esp-idf
+./install.sh esp32
+. ./export.sh
 
-**Notes**: Ensure WSL2 backend in Docker Desktop. Reattach device if disconnected. For issues, check udev or restart WSL2.
+### set alias 
+alias get_idf='. $HOME/esp/esp-idf/export.sh'
+
+## in project directory
+idf.py set-target esp32
+idf.py menuconfig
+
+idf.py build
+ls /dev/tty* # get the port for USB
+idf.py -p PORT flash
+idf.py -p <PORT> monitor
+
+### Or combile build flash monitor
+idf.py -p PORT flash monitor
 
 
 ## Build and Flash firmware

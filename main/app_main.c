@@ -31,8 +31,8 @@ static const char *TAG = "app_main";
 
 esp_rmaker_device_t *pump_device;
 
-/* NEW: Array of soil moisture sensor devices */
-esp_rmaker_device_t *soil_sensor_devices[NUM_SOIL_SENSORS];
+/* Consolidated soil moisture monitor device */
+esp_rmaker_device_t *soil_monitor_device;
 
 /* Callback to handle commands received from the RainMaker cloud */
 static esp_err_t write_cb(const esp_rmaker_device_t *device, const esp_rmaker_param_t *param,
@@ -49,6 +49,24 @@ static esp_err_t write_cb(const esp_rmaker_device_t *device, const esp_rmaker_pa
         if (device == pump_device) {
             app_driver_set_state(val.val.b);
         }
+    } else if (strcmp(param_name, "Auto-Off Interval") == 0) {
+        ESP_LOGI(TAG, "Received value = %d for %s - %s",
+                val.val.i, device_name, param_name);
+        if (device == pump_device) {
+            app_driver_set_switch_off_interval(val.val.i);
+        }
+    } else if (strcmp(param_name, "Moisture Threshold") == 0) {
+        ESP_LOGI(TAG, "Received value = %d for %s - %s",
+                val.val.i, device_name, param_name);
+        if (device == soil_monitor_device) {
+            app_driver_set_moisture_threshold(val.val.i);
+        }
+    } else if (strcmp(param_name, "Automatic") == 0) {
+        ESP_LOGI(TAG, "Received value = %s for %s - %s",
+                val.val.b? "true" : "false", device_name, param_name);
+        if (device == pump_device) {
+            app_driver_set_auto_mode(val.val.b);
+        }
     } else if (strcmp(param_name, ESP_RMAKER_DEF_BRIGHTNESS_NAME) == 0) {
         ESP_LOGI(TAG, "Received value = %d for %s - %s",
                 val.val.i, device_name, param_name);
@@ -63,84 +81,120 @@ static esp_err_t write_cb(const esp_rmaker_device_t *device, const esp_rmaker_pa
     return ESP_OK;
 }
 
-/* Function to create and initialize soil moisture sensor devices */
-/* Function to create and initialize soil moisture sensor devices */
+/* Function to create and initialize Temperature and Humidity sensor devices */
+static void init_temp_sensor_devices(esp_rmaker_node_t *node)
+{
+    /* 1. Create Temperature Sensor Device */
+    /* Use string literal for device type to avoid macro issues */
+    esp_rmaker_device_t *temp_device = esp_rmaker_device_create("Temperature Sensor", "esp.device.temperature-sensor", NULL);
+    
+     /* Add Name Parameter */
+    esp_rmaker_device_add_param(temp_device, esp_rmaker_name_param_create(ESP_RMAKER_DEF_NAME_PARAM, "Temperature Sensor"));
+
+    /* Add Temperature Parameter */
+    esp_rmaker_param_t *temp_param = esp_rmaker_param_create("Temperature", ESP_RMAKER_DEF_TEMPERATURE_NAME, esp_rmaker_float(0.0), PROP_FLAG_READ);
+    /* HIDDEN UI or Text? Temperature is usually a value. standard_types has NO UI_TEXT macro mostly, passing string "esp.ui.text" is valid if supported by app, otherwise just don't add UI type or use "esp.ui.hue"? No. */
+    /* Actually for Read-only value, we don't strictly need a UI type, the app renders it. */
+    /* But to match "esp.ui.text" string: */
+    esp_rmaker_param_add_ui_type(temp_param, "esp.ui.text");
+    esp_rmaker_device_add_param(temp_device, temp_param);
+    esp_rmaker_device_assign_primary_param(temp_device, temp_param);
+    
+    esp_rmaker_node_add_device(node, temp_device);
+
+    /* 2. Create Humidity Sensor Device */
+    /* Using a custom type or generic sensor type for Humidity if not standard definition available easily */
+    esp_rmaker_device_t *hum_device = esp_rmaker_device_create("Humidity Sensor", "esp.device.humidity-sensor", NULL);
+    
+    /* Add Name Parameter */
+    esp_rmaker_device_add_param(hum_device, esp_rmaker_name_param_create(ESP_RMAKER_DEF_NAME_PARAM, "Humidity Sensor"));
+
+    /* Add Humidity Parameter */
+    esp_rmaker_param_t *hum_param = esp_rmaker_param_create("Humidity", "esp.param.humidity", esp_rmaker_float(0.0), PROP_FLAG_READ);
+    esp_rmaker_param_add_ui_type(hum_param, "esp.ui.text");
+    esp_rmaker_device_add_param(hum_device, hum_param);
+    esp_rmaker_device_assign_primary_param(hum_device, hum_param);
+    
+    esp_rmaker_node_add_device(node, hum_device);
+}
+
+/* Function to create and initialize consolidated soil moisture monitor device */
 static void init_soil_sensor_devices(esp_rmaker_node_t *node)
 {
-    char device_name[32];
-    char serial_number[32];
+    ESP_LOGI(TAG, "Creating consolidated soil moisture monitor device...");
     
-    ESP_LOGI(TAG, "Creating %d soil moisture sensor devices...", NUM_SOIL_SENSORS);
+    /* Create base temperature sensor device for primary average display */
+    soil_monitor_device = esp_rmaker_device_create(
+        "Soil Moisture Monitor",
+        "esp.device.temperature-sensor",
+        NULL
+    );
     
+    if (soil_monitor_device == NULL) {
+        ESP_LOGE(TAG, "Failed to create soil monitor device");
+        return;
+    }
+    
+    /* Add device attributes */
+    esp_rmaker_device_add_attribute(soil_monitor_device, "sensor_type", "aggregate");
+    esp_rmaker_device_add_attribute(soil_monitor_device, "unit", "percent");
+    
+    /* Create and add average moisture parameter (primary - shows on icon) */
+    esp_rmaker_param_t *avg_param = esp_rmaker_param_create(
+        PARAM_AVERAGE_MOISTURE,
+        ESP_RMAKER_DEF_TEMPERATURE_NAME,
+        esp_rmaker_float(0.0),
+        PROP_FLAG_READ
+    );
+    if (avg_param) {
+        esp_rmaker_device_add_param(soil_monitor_device, avg_param);
+        esp_rmaker_device_assign_primary_param(soil_monitor_device, avg_param);
+        esp_rmaker_param_add_ui_type(avg_param, "esp.ui.slider");
+        esp_rmaker_param_add_bounds(avg_param,
+                                   esp_rmaker_float(0.0),
+                                   esp_rmaker_float(100.0),
+                                   esp_rmaker_float(0.1));
+        ESP_LOGI(TAG, "✓ Average moisture parameter created");
+    }
+    
+    /* Add individual sensor parameters */
+    const char *sensor_names[] = {PARAM_SENSOR_1, PARAM_SENSOR_2, PARAM_SENSOR_3, PARAM_SENSOR_4};
     for (int i = 0; i < NUM_SOIL_SENSORS; i++) {
-        // Create unique device name
-        snprintf(device_name, sizeof(device_name), "Soil Moisture %d", i + 1);
-        snprintf(serial_number, sizeof(serial_number), "SM-%d", 1000 + i);
-        
-        ESP_LOGI(TAG, "Creating device %d: %s", i, device_name);
-        
-        /* Create temperature sensor device */
-        soil_sensor_devices[i] = esp_rmaker_temp_sensor_device_create(
-            device_name,
-            NULL,  // No private data
-            0.0f   // Initial value
+        esp_rmaker_param_t *sensor_param = esp_rmaker_param_create(
+            sensor_names[i],
+            ESP_RMAKER_DEF_TEMPERATURE_NAME,
+            esp_rmaker_float(0.0),
+            PROP_FLAG_READ
         );
-        
-        if (soil_sensor_devices[i] == NULL) {
-            ESP_LOGE(TAG, "FAILED to create soil sensor device %d", i);
-            continue; // Skip this device
-        }
-        
-        ESP_LOGI(TAG, "Device %d created successfully at %p", i, soil_sensor_devices[i]);
-        
-        // Add device to the Rainmaker node
-        esp_err_t err = esp_rmaker_node_add_device(node, soil_sensor_devices[i]);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to add device %d to node: %s", i, esp_err_to_name(err));
-            continue;
-        }
-        
-        // Add custom attributes
-        esp_rmaker_device_add_attribute(soil_sensor_devices[i], 
-                                       "sensor_type", "soil_moisture");
-        esp_rmaker_device_add_attribute(soil_sensor_devices[i], 
-                                       "unit", "percent");
-        esp_rmaker_device_add_attribute(soil_sensor_devices[i], 
-                                       "Serial Number", serial_number);
-        
-        // Get the temperature parameter
-        esp_rmaker_param_t *moisture_param = esp_rmaker_device_get_param_by_name(
-            soil_sensor_devices[i], 
-            ESP_RMAKER_DEF_TEMPERATURE_NAME
-        );
-        
-        if (moisture_param) {
-            // Add UI customization
-            esp_rmaker_param_add_ui_type(moisture_param, "esp.ui.slider");
-            esp_rmaker_param_add_bounds(moisture_param, 
+        if (sensor_param) {
+            esp_rmaker_device_add_param(soil_monitor_device, sensor_param);
+            esp_rmaker_param_add_ui_type(sensor_param, "esp.ui.slider");
+            esp_rmaker_param_add_bounds(sensor_param,
                                        esp_rmaker_float(0.0),
                                        esp_rmaker_float(100.0),
                                        esp_rmaker_float(0.1));
-            ESP_LOGI(TAG, "Device %d parameter configured", i);
-        } else {
-            ESP_LOGW(TAG, "Could not get parameter for device %d", i);
         }
-
-        /* Add a companion Status parameter (string) to indicate connectivity */
-        esp_rmaker_param_t *status_param = esp_rmaker_param_create(
-            "Status",
-            "string",
-            esp_rmaker_str("Connected"),
-            PROP_FLAG_READ
-        );
-        if (status_param) {
-            esp_rmaker_device_add_param(soil_sensor_devices[i], status_param);
-        }
-        
-        ESP_LOGI(TAG, "✓ Soil moisture sensor device %d setup complete", i);
+    }
+    ESP_LOGI(TAG, "✓ Individual sensor parameters created");
+    
+    /* Add Moisture Threshold parameter (slider: 0-100%, default 30%) */
+    esp_rmaker_param_t *threshold_param = esp_rmaker_param_create(
+        "Moisture Threshold", NULL, esp_rmaker_int(30), PROP_FLAG_READ | PROP_FLAG_WRITE);
+    if (threshold_param) {
+        esp_rmaker_param_add_ui_type(threshold_param, "esp.ui.slider");
+        esp_rmaker_param_add_bounds(threshold_param, esp_rmaker_int(0), esp_rmaker_int(100), esp_rmaker_int(1));
+        esp_rmaker_device_add_param(soil_monitor_device, threshold_param);
+        ESP_LOGI(TAG, "✓ Moisture threshold parameter created");
     }
     
-    ESP_LOGI(TAG, "All soil moisture sensor devices created");
+    /* Add device to node */
+    esp_err_t err = esp_rmaker_node_add_device(node, soil_monitor_device);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add soil monitor device to node: %s", esp_err_to_name(err));
+        return;
+    }
+    
+    ESP_LOGI(TAG, "✓ Soil moisture monitor device setup complete");
 }
 
 void app_main()
@@ -181,6 +235,24 @@ void app_main()
     esp_rmaker_device_add_cb(pump_device, write_cb, NULL);
     esp_rmaker_device_add_attribute(pump_device, "device", "pump");
     esp_rmaker_device_add_attribute(pump_device, "Serial Number", "PN-001");
+    
+    /* Add Auto-Off Interval parameter (slider: 1-300 seconds, default 10) */
+    esp_rmaker_param_t *auto_off_param = esp_rmaker_param_create(
+        "Auto-Off Interval", NULL, esp_rmaker_int(10), PROP_FLAG_READ | PROP_FLAG_WRITE);
+    if (auto_off_param) {
+        esp_rmaker_param_add_ui_type(auto_off_param, "esp.ui.slider");
+        esp_rmaker_param_add_bounds(auto_off_param, esp_rmaker_int(1), esp_rmaker_int(300), esp_rmaker_int(1));
+        esp_rmaker_device_add_param(pump_device, auto_off_param);
+    }
+    
+    /* Add Automatic Mode parameter (toggle: default true) */
+    esp_rmaker_param_t *auto_mode_param = esp_rmaker_param_create(
+        "Automatic", NULL, esp_rmaker_bool(true), PROP_FLAG_READ | PROP_FLAG_WRITE);
+    if (auto_mode_param) {
+        esp_rmaker_param_add_ui_type(auto_mode_param, "esp.ui.toggle");
+        esp_rmaker_device_add_param(pump_device, auto_mode_param);
+    }
+    
     esp_rmaker_node_add_device(node, pump_device);
 
         /* Light, Fan and simulated Temperature Sensor removed to simplify firmware.
@@ -188,6 +260,15 @@ void app_main()
     
     /* NEW: Create Soil Moisture Sensor devices */
     init_soil_sensor_devices(node);
+    
+    /* NEW: Create config Temperature & Humidity devices */
+    init_temp_sensor_devices(node);
+
+    /* Initialize soil sensor hardware and start periodic reading */
+    ESP_ERROR_CHECK(app_soil_sensor_init());
+    
+    /* Initialize temperature sensor */
+    ESP_ERROR_CHECK(app_temp_sensor_init());
 
     /* Enable OTA */
     esp_rmaker_ota_enable_default();

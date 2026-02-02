@@ -17,10 +17,26 @@
 #define DEFAULT_TEMPERATURE         25.0
 #define REPORTING_PERIOD            60 /* Seconds */
 
+/* DHT22 Sensor Configuration */
+#define DHT_GPIO                    26
+#define DHT_SENSOR_TYPE             DHT_TYPE_AM2301 /* AM2301/DHT22/AM2302 */
+#define TEMP_SENSOR_UPDATE_INTERVAL_SEC 60
+
 extern esp_rmaker_device_t *pump_device;
 
-/* NEW: Soil moisture sensor devices */
-extern esp_rmaker_device_t *soil_sensor_devices[];
+/* Consolidated soil moisture monitor device */
+extern esp_rmaker_device_t *soil_monitor_device;
+
+/* Parameter name macros for consistency */
+#define PARAM_AVERAGE_MOISTURE      "Average Moisture"
+#define PARAM_SENSOR_1              "Sensor 1"
+#define PARAM_SENSOR_2              "Sensor 2"
+#define PARAM_SENSOR_3              "Sensor 3"
+#define PARAM_SENSOR_4              "Sensor 4"
+#define PARAM_SENSOR_1_STATUS       "Sensor 1 Status"
+#define PARAM_SENSOR_2_STATUS       "Sensor 2 Status"
+#define PARAM_SENSOR_3_STATUS       "Sensor 3 Status"
+#define PARAM_SENSOR_4_STATUS       "Sensor 4 Status"
 
 void app_driver_init(void);
 int app_driver_set_state(bool state);
@@ -29,3 +45,18 @@ bool app_driver_get_state(void);
 
 /* NEW: Soil sensor functions */
 esp_err_t app_soil_sensor_init(void);
+
+/* NEW: Temperature/Humidity sensor functions */
+esp_err_t app_temp_sensor_init(void);
+
+/* Auto-off timer functions */
+void app_driver_set_switch_off_interval(uint32_t interval_seconds);
+uint32_t app_driver_get_switch_off_interval(void);
+
+/* Auto-watering threshold functions */
+void app_driver_set_moisture_threshold(uint32_t threshold_percent);
+uint32_t app_driver_get_moisture_threshold(void);
+
+/* Automatic mode functions */
+void app_driver_set_auto_mode(bool auto_mode);
+bool app_driver_get_auto_mode(void);
