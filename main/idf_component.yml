@@ -8,8 +8,6 @@ dependencies:
     #override_path: /opt/esp/esp-rainmaker/components/esp_rainmaker/
   espressif/button:
     version: ^4.1.4
-  espressif/led_indicator:
-    version: ^2.0.0
   espressif/rmaker_app_reset:
     version: '*'
     #override_path: /opt/esp/esp-rainmaker/examples/common/rmaker_app_reset/

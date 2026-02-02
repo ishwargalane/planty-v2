@@ -277,34 +277,6 @@ dependencies:
       registry_url: https://components.espressif.com
       type: service
     version: 1.0.3
-  espressif/led_indicator:
-    component_hash: 2175d7541321bcc5a5ca528d35b6c30246d3d1910722aa360332ae66dce93bfd
-    dependencies:
-    - name: espressif/cmake_utilities
-      registry_url: https://components.espressif.com
-      require: private
-      version: '*'
-    - name: idf
-      require: private
-      version: '>=5.0'
-    - name: espressif/led_strip
-      registry_url: https://components.espressif.com
-      require: public
-      version: 3.*
-    source:
-      registry_url: https://components.espressif.com/
-      type: service
-    version: 2.1.1
-  espressif/led_strip:
-    component_hash: f0d1b7f93eb3ee57bcfd220656176b0b5616e1947f89ed44364555cf910c4840
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=5.0'
-    source:
-      registry_url: https://components.espressif.com
-      type: service
-    version: 3.0.2
   espressif/mdns:
     component_hash: 29e47564b1a7ee778135e17fbbf2a2773f71c97ebabfe626c8eda7c958a7ad16
     dependencies:
@@ -411,11 +383,10 @@ direct_dependencies:
 - esp-idf-lib/dht
 - espressif/button
 - espressif/esp_rainmaker
-- espressif/led_indicator
 - espressif/rmaker_app_insights
 - espressif/rmaker_app_network
 - espressif/rmaker_app_reset
 - idf
-manifest_hash: 3385824f0244db65e66e1b746b16a44f9e4b06b6a200f456297d04e687802779
+manifest_hash: 2a4f108aec041447a5dcc80594b96cb858f0bea88707b9d9a55cea0e80f535a2
 target: esp32
 version: 2.0.0
