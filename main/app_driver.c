@@ -11,6 +11,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/timers.h>
 #include <time.h>
+#include <math.h>
 
 #include <i2cdev.h>
 #include "soil_sensor.h"
@@ -137,16 +138,20 @@ static void app_soil_sensor_update(TimerHandle_t handle)
     
     /* Update average moisture parameter */
     if (avg_moisture_param) {
+        /* Round to 2 decimal places */
+        average = roundf(average * 100.0f) / 100.0f;
         esp_rmaker_param_update_and_report(avg_moisture_param, esp_rmaker_float(average));
-        ESP_LOGI(TAG, "✓ Average Moisture: %.1f%% (%d/%d sensors)", 
+        ESP_LOGI(TAG, "✓ Average Moisture: %.2f%% (%d/%d sensors)", 
                  average, valid_count, NUM_SOIL_SENSORS);
     }
     
     /* Update individual sensor parameters */
     for (int i = 0; i < NUM_SOIL_SENSORS; i++) {
         if (sensor_values[i] != -1.0f && sensor_params[i]) {
-            esp_rmaker_param_update_and_report(sensor_params[i], esp_rmaker_float(sensor_values[i]));
-            ESP_LOGI(TAG, "✓ Sensor %d: %.1f%%", i + 1, sensor_values[i]);
+            /* Round to 2 decimal places */
+            float rounded = roundf(sensor_values[i] * 100.0f) / 100.0f;
+            esp_rmaker_param_update_and_report(sensor_params[i], esp_rmaker_float(rounded));
+            ESP_LOGI(TAG, "✓ Sensor %d: %.2f%%", i + 1, rounded);
         }
     }
     
@@ -311,7 +316,11 @@ static void app_temp_sensor_update(TimerHandle_t handle)
     
     /* Read from DHT22 sensor */
     if (dht_read_float_data(DHT_SENSOR_TYPE, DHT_GPIO, &humidity, &temperature) == ESP_OK) {
-        ESP_LOGI(TAG, "Read Temp: %.1f C, Humidity: %.1f %%", temperature, humidity);
+        /* Round to 2 decimal places */
+        temperature = roundf(temperature * 100.0f) / 100.0f;
+        humidity = roundf(humidity * 100.0f) / 100.0f;
+        
+        ESP_LOGI(TAG, "Read Temp: %.2f C, Humidity: %.2f %%", temperature, humidity);
         
         if (temp_param) {
             esp_rmaker_param_update_and_report(temp_param, esp_rmaker_float(temperature));
@@ -367,7 +376,8 @@ static void push_btn_cb(void *arg, void *data)
 
 static void set_power_state(bool target)
 {
-    gpio_set_level(OUTPUT_GPIO, target);
+    /* Inverted logic for Active Low relay: ON(true) -> 0, OFF(false) -> 1 */
+    gpio_set_level(OUTPUT_GPIO, !target);
 }
 
 void app_driver_init()
@@ -389,7 +399,11 @@ void app_driver_init()
         app_reset_button_register(btn_handle, WIFI_RESET_BUTTON_TIMEOUT, FACTORY_RESET_BUTTON_TIMEOUT);
     }
 
-    /* Configure power */
+    /* Configure power GPIO - Set level BEFORE configuring as output to avoid glitch */
+    /* For Active Low relay: Set HIGH first to keep relay OFF during boot */
+    gpio_set_direction(OUTPUT_GPIO, GPIO_MODE_INPUT);  // Temporarily set as input
+    gpio_set_level(OUTPUT_GPIO, 1);  // Set HIGH (relay OFF for Active Low)
+    
     gpio_config_t io_conf = {
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = 1,

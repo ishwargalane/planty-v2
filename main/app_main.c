@@ -92,7 +92,7 @@ static void init_temp_sensor_devices(esp_rmaker_node_t *node)
     esp_rmaker_device_add_param(temp_device, esp_rmaker_name_param_create(ESP_RMAKER_DEF_NAME_PARAM, "Temperature Sensor"));
 
     /* Add Temperature Parameter */
-    esp_rmaker_param_t *temp_param = esp_rmaker_param_create("Temperature", ESP_RMAKER_DEF_TEMPERATURE_NAME, esp_rmaker_float(0.0), PROP_FLAG_READ);
+    esp_rmaker_param_t *temp_param = esp_rmaker_param_create("Temperature", ESP_RMAKER_DEF_TEMPERATURE_NAME, esp_rmaker_float(0.0), PROP_FLAG_READ | PROP_FLAG_TIME_SERIES);
     /* HIDDEN UI or Text? Temperature is usually a value. standard_types has NO UI_TEXT macro mostly, passing string "esp.ui.text" is valid if supported by app, otherwise just don't add UI type or use "esp.ui.hue"? No. */
     /* Actually for Read-only value, we don't strictly need a UI type, the app renders it. */
     /* But to match "esp.ui.text" string: */
@@ -110,7 +110,7 @@ static void init_temp_sensor_devices(esp_rmaker_node_t *node)
     esp_rmaker_device_add_param(hum_device, esp_rmaker_name_param_create(ESP_RMAKER_DEF_NAME_PARAM, "Humidity Sensor"));
 
     /* Add Humidity Parameter */
-    esp_rmaker_param_t *hum_param = esp_rmaker_param_create("Humidity", "esp.param.humidity", esp_rmaker_float(0.0), PROP_FLAG_READ);
+    esp_rmaker_param_t *hum_param = esp_rmaker_param_create("Humidity", "esp.param.humidity", esp_rmaker_float(0.0), PROP_FLAG_READ | PROP_FLAG_TIME_SERIES);
     esp_rmaker_param_add_ui_type(hum_param, "esp.ui.text");
     esp_rmaker_device_add_param(hum_device, hum_param);
     esp_rmaker_device_assign_primary_param(hum_device, hum_param);
@@ -144,7 +144,7 @@ static void init_soil_sensor_devices(esp_rmaker_node_t *node)
         PARAM_AVERAGE_MOISTURE,
         ESP_RMAKER_DEF_TEMPERATURE_NAME,
         esp_rmaker_float(0.0),
-        PROP_FLAG_READ
+        PROP_FLAG_READ | PROP_FLAG_TIME_SERIES
     );
     if (avg_param) {
         esp_rmaker_device_add_param(soil_monitor_device, avg_param);
