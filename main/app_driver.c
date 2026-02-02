@@ -15,6 +15,7 @@
 
 #include <i2cdev.h>
 #include "soil_sensor.h"
+#include <dht.h>
 #include "sensor_config.h"
 
 #include <iot_button.h>
@@ -78,6 +79,8 @@ static bool g_auto_mode = true;  // Default true (Automatic enabled)
 /* Cached parameter pointers for efficient updates */
 static esp_rmaker_param_t *avg_moisture_param = NULL;
 static esp_rmaker_param_t *sensor_params[NUM_SOIL_SENSORS] = {NULL};
+static esp_rmaker_param_t *temp_param = NULL;
+static esp_rmaker_param_t *humidity_param = NULL;
 
 static esp_err_t app_indicator_set_rgb(uint8_t red, uint8_t green, uint8_t blue)
 {
@@ -309,7 +312,55 @@ esp_err_t app_soil_sensor_init(void)
     return ESP_OK;
 }
 
-/* app_get_current_temperature and app_sensor_init removed (no simulated temperature) */
+static void app_temp_sensor_update(TimerHandle_t handle)
+{
+    float temperature = 0.0;
+    float humidity = 0.0;
+    
+    /* Read from DHT22 sensor */
+    if (dht_read_float_data(DHT_SENSOR_TYPE, DHT_GPIO, &humidity, &temperature) == ESP_OK) {
+        ESP_LOGI(TAG, "Read Temp: %.1f C, Humidity: %.1f %%", temperature, humidity);
+        
+        if (temp_param) {
+            esp_rmaker_param_update_and_report(temp_param, esp_rmaker_float(temperature));
+        }
+        if (humidity_param) {
+            esp_rmaker_param_update_and_report(humidity_param, esp_rmaker_float(humidity));
+        }
+    } else {
+        ESP_LOGE(TAG, "Could not read data from DHT sensor");
+    }
+}
+
+esp_err_t app_temp_sensor_init(void)
+{
+    /* Cache parameter handles */
+    const esp_rmaker_device_t *temp_device = esp_rmaker_node_get_device_by_name(esp_rmaker_get_node(), "Temperature Sensor");
+    if (temp_device) {
+        temp_param = esp_rmaker_device_get_param_by_name(temp_device, "Temperature");
+    }
+    
+    const esp_rmaker_device_t *hum_device = esp_rmaker_node_get_device_by_name(esp_rmaker_get_node(), "Humidity Sensor");
+    if (hum_device) {
+        humidity_param = esp_rmaker_device_get_param_by_name(hum_device, "Humidity");
+    }
+
+    /* Start a timer to read values periodically */
+    TimerHandle_t temp_sensor_timer = xTimerCreate("temp_sensor_update_tm",
+                                       (TEMP_SENSOR_UPDATE_INTERVAL_SEC * 1000) / portTICK_PERIOD_MS,
+                                       pdTRUE,
+                                       NULL,
+                                       app_temp_sensor_update);
+    
+    if (temp_sensor_timer) {
+        xTimerStart(temp_sensor_timer, 0);
+    } else {
+        ESP_LOGE(TAG, "Failed to create temp sensor timer");
+        return ESP_FAIL;
+    }
+    
+    return ESP_OK;
+}
 
 static void app_indicator_set(bool state)
 {

@@ -17,6 +17,11 @@
 #define DEFAULT_TEMPERATURE         25.0
 #define REPORTING_PERIOD            60 /* Seconds */
 
+/* DHT22 Sensor Configuration */
+#define DHT_GPIO                    26
+#define DHT_SENSOR_TYPE             DHT_TYPE_AM2301 /* AM2301/DHT22/AM2302 */
+#define TEMP_SENSOR_UPDATE_INTERVAL_SEC 60
+
 extern esp_rmaker_device_t *pump_device;
 
 /* Consolidated soil moisture monitor device */
@@ -40,6 +45,9 @@ bool app_driver_get_state(void);
 
 /* NEW: Soil sensor functions */
 esp_err_t app_soil_sensor_init(void);
+
+/* NEW: Temperature/Humidity sensor functions */
+esp_err_t app_temp_sensor_init(void);
 
 /* Auto-off timer functions */
 void app_driver_set_switch_off_interval(uint32_t interval_seconds);

@@ -81,6 +81,43 @@ static esp_err_t write_cb(const esp_rmaker_device_t *device, const esp_rmaker_pa
     return ESP_OK;
 }
 
+/* Function to create and initialize Temperature and Humidity sensor devices */
+static void init_temp_sensor_devices(esp_rmaker_node_t *node)
+{
+    /* 1. Create Temperature Sensor Device */
+    /* Use string literal for device type to avoid macro issues */
+    esp_rmaker_device_t *temp_device = esp_rmaker_device_create("Temperature Sensor", "esp.device.temperature-sensor", NULL);
+    
+     /* Add Name Parameter */
+    esp_rmaker_device_add_param(temp_device, esp_rmaker_name_param_create(ESP_RMAKER_DEF_NAME_PARAM, "Temperature Sensor"));
+
+    /* Add Temperature Parameter */
+    esp_rmaker_param_t *temp_param = esp_rmaker_param_create("Temperature", ESP_RMAKER_DEF_TEMPERATURE_NAME, esp_rmaker_float(0.0), PROP_FLAG_READ);
+    /* HIDDEN UI or Text? Temperature is usually a value. standard_types has NO UI_TEXT macro mostly, passing string "esp.ui.text" is valid if supported by app, otherwise just don't add UI type or use "esp.ui.hue"? No. */
+    /* Actually for Read-only value, we don't strictly need a UI type, the app renders it. */
+    /* But to match "esp.ui.text" string: */
+    esp_rmaker_param_add_ui_type(temp_param, "esp.ui.text");
+    esp_rmaker_device_add_param(temp_device, temp_param);
+    esp_rmaker_device_assign_primary_param(temp_device, temp_param);
+    
+    esp_rmaker_node_add_device(node, temp_device);
+
+    /* 2. Create Humidity Sensor Device */
+    /* Using a custom type or generic sensor type for Humidity if not standard definition available easily */
+    esp_rmaker_device_t *hum_device = esp_rmaker_device_create("Humidity Sensor", "esp.device.humidity-sensor", NULL);
+    
+    /* Add Name Parameter */
+    esp_rmaker_device_add_param(hum_device, esp_rmaker_name_param_create(ESP_RMAKER_DEF_NAME_PARAM, "Humidity Sensor"));
+
+    /* Add Humidity Parameter */
+    esp_rmaker_param_t *hum_param = esp_rmaker_param_create("Humidity", "esp.param.humidity", esp_rmaker_float(0.0), PROP_FLAG_READ);
+    esp_rmaker_param_add_ui_type(hum_param, "esp.ui.text");
+    esp_rmaker_device_add_param(hum_device, hum_param);
+    esp_rmaker_device_assign_primary_param(hum_device, hum_param);
+    
+    esp_rmaker_node_add_device(node, hum_device);
+}
+
 /* Function to create and initialize consolidated soil moisture monitor device */
 static void init_soil_sensor_devices(esp_rmaker_node_t *node)
 {
@@ -223,9 +260,15 @@ void app_main()
     
     /* NEW: Create Soil Moisture Sensor devices */
     init_soil_sensor_devices(node);
+    
+    /* NEW: Create config Temperature & Humidity devices */
+    init_temp_sensor_devices(node);
 
     /* Initialize soil sensor hardware and start periodic reading */
     ESP_ERROR_CHECK(app_soil_sensor_init());
+    
+    /* Initialize temperature sensor */
+    ESP_ERROR_CHECK(app_temp_sensor_init());
 
     /* Enable OTA */
     esp_rmaker_ota_enable_default();

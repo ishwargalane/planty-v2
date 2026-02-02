@@ -21,3 +21,5 @@ dependencies:
     #override_path: /opt/esp/esp-rainmaker/examples/common/rmaker_app_insights/
   # NEW: Add esp-idf-lib for ADS1115 support
   esp-idf-lib/ads111x: '*'
+  # NEW: Add esp-idf-lib for DHT22 support
+  esp-idf-lib/dht: '*'
